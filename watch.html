@@ -2,74 +2,70 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <title>Anime Watch</title>
+  <title>MyAnime Watch</title>
   <style>
-    body { background: #121212; color: white; font-family: sans-serif; padding: 1em; }
-    .tag-button { background: #333; color: white; padding: 5px 10px; margin: 5px; border-radius: 5px; cursor: pointer; }
-    .tag-button:hover { background: #555; }
-    #episode-list { margin-top: 2em; }
+    body { font-family: sans-serif; background: #111; color: #eee; text-align: center; }
+    select, iframe { margin: 10px; padding: 10px; }
   </style>
 </head>
 <body>
 
-<h2>🎬 Page de visionnage</h2>
-<div id="tag-container">Chargement des tags...</div>
-<div id="episode-list"></div>
+  <h1 id="anime-title">Chargement...</h1>
+  <div id="episodes-container"></div>
+  <iframe id="player" width="100%" height="480" frameborder="0" allowfullscreen></iframe>
 
-<script>
-  const params = new URLSearchParams(location.search);
-  const animeId = params.get("id");
-  const catalogUrl = `https://corsproxy.io/?https://anime-sama.fr/catalogue/?page=1`;
+  <script>
+    const params = new URLSearchParams(location.search);
+    const slug = params.get('V');
+    const lang = params.get('lang') || 'vf';
 
-  async function fetchTags() {
-    const res = await fetch(catalogUrl);
-    const html = await res.text();
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html, "text/html");
+    const base = `https://anime-sama.fr/catalogue/${slug}`;
+    const cors = "https://corsproxy.io/?";
+    const episodeContainer = document.getElementById("episodes-container");
+    const player = document.getElementById("player");
+    document.getElementById("anime-title").innerText = decodeURIComponent(slug.replace(/-/g, " "));
 
-    const cards = [...doc.querySelectorAll("#list_catalog a")];
-    const anime = cards.find(a => a.href.includes(animeId));
-    if (!anime) return document.getElementById("tag-container").innerText = "Anime non trouvé.";
+    async function tryLoadEpisodes(type = "saison1") {
+      const url = `${base}/${type}/${lang}/episodes.js`;
+      const fullUrl = cors + url;
 
-    const tags = [];
-    anime.querySelectorAll("div span").forEach(span => {
-      const text = span.textContent.trim().toLowerCase();
-      if (["vf", "vostfr", "vostfr-hd"].includes(text)) tags.push(text);
-    });
+      try {
+        const res = await fetch(fullUrl);
+        const jsCode = await res.text();
 
-    if (tags.length === 0) {
-      return document.getElementById("tag-container").innerText = "Aucun tag trouvé.";
+        // Interpréter le contenu du fichier JS (ex: `var episodes = [...]`)
+        const sandbox = {};
+        new Function("window", jsCode)(sandbox);
+        const episodes = sandbox.episodes || window.episodes;
+
+        if (!episodes || episodes.length === 0) throw new Error("Pas d'épisodes");
+
+        renderEpisodes(episodes);
+      } catch (e) {
+        if (type === "saison1") return tryLoadEpisodes("film");
+        else episodeContainer.innerText = "Impossible de charger les épisodes.";
+      }
     }
 
-    // Pour chaque tag, affiche un bouton
-    document.getElementById("tag-container").innerHTML = "Choisis une version :<br>";
-    tags.forEach(tag => {
-      const btn = document.createElement("button");
-      btn.textContent = tag.toUpperCase();
-      btn.className = "tag-button";
-      btn.onclick = () => loadEpisodes("film", tag); // ou "serie" si nécessaire
-      document.getElementById("tag-container").appendChild(btn);
-    });
-  }
+    function renderEpisodes(episodes) {
+      const select = document.createElement("select");
+      select.innerHTML = episodes.map((ep, i) => `<option value="${ep.url}">Épisode ${i + 1}</option>`).join("");
+      select.onchange = () => player.src = select.value;
+      episodeContainer.appendChild(select);
 
-  function loadEpisodes(type, tag) {
-    const container = document.getElementById("episode-list");
-    container.innerHTML = `<p>Chargement des épisodes (${tag.toUpperCase()})...</p>`;
+      // Charger premier épisode par défaut
+      player.src = episodes[0].url;
+    }
 
-    const episodeScript = document.createElement("script");
-    episodeScript.src = `https://corsproxy.io/?https://anime-sama.fr/catalogue/${animeId}/${type}/${tag}/episodes.js?filever=${Math.random()}`;
-    episodeScript.defer = true;
+    // Charger le script vidéos global
+    const scriptVideo = document.createElement("script");
+    scriptVideo.src = cors + "https://anime-sama.fr/js/contenu/script_videos.js?filever=25309";
+    scriptVideo.defer = true;
+    document.body.appendChild(scriptVideo);
 
-    const playerScript = document.createElement("script");
-    playerScript.src = `https://corsproxy.io/?https://anime-sama.fr/js/contenu/script_videos.js?filever=${Math.random()}`;
-    playerScript.defer = true;
-
-    document.body.appendChild(episodeScript);
-    document.body.appendChild(playerScript);
-  }
-
-  fetchTags();
-</script>
+    // Charger les épisodes
+    tryLoadEpisodes();
+  </script>
 
 </body>
 </html>
