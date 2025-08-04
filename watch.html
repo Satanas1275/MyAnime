@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Anime Watch</title>
+  <style>
+    body { background: #121212; color: white; font-family: sans-serif; padding: 1em; }
+    .tag-button { background: #333; color: white; padding: 5px 10px; margin: 5px; border-radius: 5px; cursor: pointer; }
+    .tag-button:hover { background: #555; }
+    #episode-list { margin-top: 2em; }
+  </style>
+</head>
+<body>
+
+<h2>🎬 Page de visionnage</h2>
+<div id="tag-container">Chargement des tags...</div>
+<div id="episode-list"></div>
+
+<script>
+  const params = new URLSearchParams(location.search);
+  const animeId = params.get("id");
+  const catalogUrl = `https://anime-sama.fr/catalogue/?page=1`;
+
+  async function fetchTags() {
+    const res = await fetch(catalogUrl);
+    const html = await res.text();
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, "text/html");
+
+    const cards = [...doc.querySelectorAll("#list_catalog a")];
+    const anime = cards.find(a => a.href.includes(animeId));
+    if (!anime) return document.getElementById("tag-container").innerText = "Anime non trouvé.";
+
+    const tags = [];
+    anime.querySelectorAll("div span").forEach(span => {
+      const text = span.textContent.trim().toLowerCase();
+      if (["vf", "vostfr", "vostfr-hd"].includes(text)) tags.push(text);
+    });
+
+    if (tags.length === 0) {
+      return document.getElementById("tag-container").innerText = "Aucun tag trouvé.";
+    }
+
+    // Pour chaque tag, affiche un bouton
+    document.getElementById("tag-container").innerHTML = "Choisis une version :<br>";
+    tags.forEach(tag => {
+      const btn = document.createElement("button");
+      btn.textContent = tag.toUpperCase();
+      btn.className = "tag-button";
+      btn.onclick = () => loadEpisodes("film", tag); // ou "serie" si nécessaire
+      document.getElementById("tag-container").appendChild(btn);
+    });
+  }
+
+  function loadEpisodes(type, tag) {
+    const container = document.getElementById("episode-list");
+    container.innerHTML = `<p>Chargement des épisodes (${tag.toUpperCase()})...</p>`;
+
+    const episodeScript = document.createElement("script");
+    episodeScript.src = `https://anime-sama.fr/catalogue/${animeId}/${type}/${tag}/episodes.js?filever=${Math.random()}`;
+    episodeScript.defer = true;
+
+    const playerScript = document.createElement("script");
+    playerScript.src = `https://anime-sama.fr/js/contenu/script_videos.js?filever=${Math.random()}`;
+    playerScript.defer = true;
+
+    document.body.appendChild(episodeScript);
+    document.body.appendChild(playerScript);
+  }
+
+  fetchTags();
+</script>
+
+</body>
+</html>
