@@ -61,6 +61,14 @@
   <div id="catalogue">Chargement…</div>
 
   <script>
+    function formatAnimeName(name) {
+      return name
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Enlève accents
+        .replace(/[^a-zA-Z0-9 ]/g, "") // Supprime caractères spéciaux
+        .replace(/\s+/g, "-") // Espaces → tirets
+        .toLowerCase();
+    }
+
     async function loadCatalogue() {
       const res = await fetch("https://corsproxy.io/?https://anime-sama.fr/catalogue/?type%5B0%5D=Anime&search=&page=1");
       const html = await res.text();
@@ -76,16 +84,18 @@
         const img = a.querySelector("img")?.src || "";
         const lang = a.querySelector("p:last-of-type")?.innerText.trim() || "VF";
 
-        const safeTitle = encodeURIComponent(title);
+        const safeName = formatAnimeName(title);
 
         const item = document.createElement("a");
         item.className = "anime-item";
-        item.href = `watch?V=${safeTitle}`;
+        item.href = `watch.html?V=${safeName}&lang=${lang.toLowerCase()}`;
+
         item.innerHTML = `
           <img src="${img}" alt="${title}">
           <div class="anime-item-title">${title}</div>
           <div class="lang-badge">${lang}</div>
         `;
+
         document.getElementById("catalogue").appendChild(item);
       });
     }
