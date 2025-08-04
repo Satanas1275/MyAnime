@@ -62,7 +62,7 @@
 
   <script>
     async function loadCatalogue() {
-      const res = await fetch("https://anime-sama.fr/catalogue/?type%5B0%5D=Anime&search=&page=1");
+      const res = await fetch("https://corsproxy.io/?https://anime-sama.fr/catalogue/?type%5B0%5D=Anime&search=&page=1");
       const html = await res.text();
       const parser = new DOMParser();
       const doc = parser.parseFromString(html, "text/html");
