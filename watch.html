@@ -51,6 +51,7 @@
       border-radius: 6px;
       max-height: 200px;
       overflow-y: auto;
+      white-space: pre-wrap;
     }
   </style>
 </head>
@@ -107,21 +108,21 @@
         return;
       }
 
-      const regex = /var\s+(eps\d+)\s*=\s*(\[[^\]]*\])/g;
+      const regex = /var\s+(eps\d+)\s*=\s*(\[[\s\S]*?\]);/g;
       const allEpisodes = [];
       let match;
 
       while ((match = regex.exec(scriptContent)) !== null) {
         const key = match[1];
-        const rawArray = match[2]
-          .replace(/[\r\n\t]/g, '')  // nettoie
-          .replace(/'/g, '"')       // remplace ' par "
-          .replace(/,\s*$/, '');    // supprime la dernière virgule
+        let rawArray = match[2]
+          .replace(/[\r\n\t]/g, '')  // Nettoie les retours ligne
+          .replace(/'/g, '"')       // Remplace les simples quotes
+          .replace(/,\s*]/g, ']');  // Supprime la virgule avant ]
 
         try {
           const jsonArray = JSON.parse(rawArray);
           jsonArray.forEach((ep, i) => {
-            allEpisodes.push({ url: ep, label: key + " [" + (i + 1) + "]" });
+            allEpisodes.push({ url: ep, label: `${key} [${i + 1}]` });
             log(`✅ ${key} - épisode ${i + 1} trouvé`);
           });
         } catch (e) {
