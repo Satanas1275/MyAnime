@@ -30,6 +30,11 @@
       gap: 1rem;
       margin-top: 1rem;
     }
+    .episode-group {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
     .episode-btn {
       background-color: #2c2c2c;
       color: white;
@@ -37,9 +42,16 @@
       padding: 0.5rem 1rem;
       border-radius: 6px;
       cursor: pointer;
+      margin-bottom: 0.3rem;
     }
     .episode-btn:hover {
       background-color: #3c3c3c;
+    }
+    select {
+      background-color: #222;
+      color: white;
+      border-radius: 4px;
+      padding: 0.3rem;
     }
     #logs {
       background-color: #111;
@@ -64,6 +76,8 @@
 
   <script>
     const logs = document.getElementById("logs");
+    const player = document.getElementById("video-player");
+    const episodeList = document.getElementById("episode-list");
 
     function log(msg) {
       logs.innerHTML += "\n→ " + msg;
@@ -78,17 +92,22 @@
       };
     }
 
+    function isLecteurValide(url) {
+      const whitelist = ["sendvid", "vidmoly", "dood", "streamtape", "uqload"];
+      return whitelist.some(domain => url.includes(domain));
+    }
+
     async function loadEpisodes() {
       const { title, lang } = getQueryParams();
       const baseURL = `https://corsproxy.io/?https://anime-sama.fr/catalogue/${title}`;
-      const possibilities = [
+      const urls = [
         `${baseURL}/saison1/${lang}/episodes.js`,
         `${baseURL}/film/${lang}/episodes.js`
       ];
 
       let scriptContent = null;
 
-      for (const url of possibilities) {
+      for (const url of urls) {
         log(`🔄 Chargement de: ${url}`);
         try {
           const res = await fetch(url);
@@ -109,50 +128,79 @@
       }
 
       const regex = /var\s+(eps\d+)\s*=\s*(\[[\s\S]*?\]);/g;
-      const allEpisodes = [];
+      const episodeMap = new Map();
       let match;
 
       while ((match = regex.exec(scriptContent)) !== null) {
         const key = match[1];
         let rawArray = match[2]
-          .replace(/[\r\n\t]/g, '')  // Nettoie les retours ligne
-          .replace(/'/g, '"')       // Remplace les simples quotes
-          .replace(/,\s*]/g, ']');  // Supprime la virgule avant ]
+          .replace(/[\r\n\t]/g, '')
+          .replace(/'/g, '"')
+          .replace(/,\s*]/g, ']');
 
         try {
-          const jsonArray = JSON.parse(rawArray);
-          jsonArray.forEach((ep, i) => {
-            allEpisodes.push({ url: ep, label: `${key} [${i + 1}]` });
-            log(`✅ ${key} - épisode ${i + 1} trouvé`);
+          const episodes = JSON.parse(rawArray);
+          episodes.forEach((url, index) => {
+            const epNum = index + 1;
+            if (!episodeMap.has(epNum)) episodeMap.set(epNum, []);
+            if (isLecteurValide(url)) {
+              episodeMap.get(epNum).push({ source: key, url });
+              log(`✅ ${key} - épisode ${epNum} ajouté`);
+            } else {
+              log(`⛔ ${key} - épisode ${epNum} ignoré (lecteur bloqué)`);
+            }
           });
         } catch (e) {
           log(`⚠️ JSON parse échoué pour ${key}: ${e.message}`);
         }
       }
 
-      if (allEpisodes.length === 0) {
+      if (episodeMap.size === 0) {
         log("❌ Erreur: Aucun épisode valide trouvé");
         return;
       }
 
-      log(`✅ ${allEpisodes.length} épisode(s) chargé(s).`);
+      log(`✅ ${episodeMap.size} épisode(s) uniques chargé(s).`);
 
-      const list = document.getElementById("episode-list");
-      const player = document.getElementById("video-player");
+      [...episodeMap.entries()].sort((a, b) => a[0] - b[0]).forEach(([epNum, sources]) => {
+        const wrapper = document.createElement("div");
+        wrapper.className = "episode-group";
 
-      allEpisodes.forEach((ep, idx) => {
         const btn = document.createElement("button");
         btn.className = "episode-btn";
-        btn.textContent = `Épisode ${idx + 1}`;
+        btn.textContent = `Épisode ${epNum}`;
         btn.onclick = () => {
-          player.src = ep.url;
+          player.src = sources[0].url;
         };
-        list.appendChild(btn);
+        wrapper.appendChild(btn);
+
+        if (sources.length > 1) {
+          const selector = document.createElement("select");
+          sources.forEach((src, i) => {
+            const opt = document.createElement("option");
+            opt.value = src.url;
+            opt.textContent = `Lecteur ${i + 1}`;
+            selector.appendChild(opt);
+          });
+
+          selector.onchange = () => {
+            player.src = selector.value;
+          };
+
+          wrapper.appendChild(selector);
+        }
+
+        episodeList.appendChild(wrapper);
       });
 
-      // Lecture auto du premier épisode
-      player.src = allEpisodes[0].url;
-      log("▶️ Lecture auto du premier épisode");
+      // Lecture automatique du 1er épisode jouable
+      const firstEp = [...episodeMap.entries()][0]?.[1]?.[0]?.url;
+      if (firstEp) {
+        player.src = firstEp;
+        log("▶️ Lecture auto du premier épisode");
+      } else {
+        log("⚠️ Aucun lecteur valide pour l'épisode 1");
+      }
     }
 
     loadEpisodes();
