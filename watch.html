@@ -2,57 +2,80 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <title>MyAnime Watch</title>
+  <title>Lecteur Anime-sama</title>
   <style>
     body {
+      background-color: #121212;
+      color: white;
       font-family: sans-serif;
-      background: #111;
-      color: #eee;
-      text-align: center;
-      margin: 0;
       padding: 1rem;
     }
-    select, iframe {
-      margin: 10px;
-      padding: 10px;
+    h1 {
+      text-align: center;
+      margin-bottom: 1rem;
     }
-    #log {
-      background: #222;
-      color: #0f0;
-      text-align: left;
+    #logs {
+      background: #1e1e1e;
+      color: #aaa;
+      font-family: monospace;
       font-size: 0.8rem;
+      padding: 0.5rem;
       max-height: 200px;
       overflow-y: auto;
-      margin-top: 2rem;
-      padding: 1rem;
-      border-top: 1px solid #444;
+      border-radius: 6px;
+      margin-bottom: 1rem;
+    }
+    #episodes {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      justify-content: center;
+      margin-bottom: 1rem;
+    }
+    .episode-btn {
+      background-color: #2c2c2c;
+      padding: 0.4rem 0.8rem;
+      border: none;
+      border-radius: 4px;
+      color: white;
+      cursor: pointer;
+    }
+    iframe {
+      width: 100%;
+      height: 480px;
+      border: none;
+      border-radius: 8px;
     }
   </style>
 </head>
 <body>
-
-  <h1 id="anime-title">Chargement...</h1>
-  <div id="episodes-container">Chargement des épisodes...</div>
-  <iframe id="player" width="100%" height="480" frameborder="0" allowfullscreen></iframe>
-
-  <div id="log">[Logs]<br></div>
+  <h1>Lecteur Anime-sama</h1>
+  <div id="logs">[ Logs chargement... ]</div>
+  <div id="episodes">Chargement des épisodes...</div>
+  <iframe id="videoPlayer" allowfullscreen></iframe>
 
   <script>
-    const logBox = document.getElementById("log");
+    const logBox = document.getElementById("logs");
+    const episodeContainer = document.getElementById("episodes");
+    const videoPlayer = document.getElementById("videoPlayer");
+
     function log(msg) {
-      logBox.innerHTML += msg + "<br>";
+      logBox.innerHTML += `→ ${msg}<br>`;
       logBox.scrollTop = logBox.scrollHeight;
     }
 
-    const params = new URLSearchParams(location.search);
-    const slug = params.get('V');
-    const lang = params.get('lang') || 'vf';
+    const params = new URLSearchParams(window.location.search);
+    const anime = params.get("V");
+    const lang = params.get("lang") || "vf";
 
-    const base = `https://anime-sama.fr/catalogue/${slug}`;
+    if (!anime) {
+      log("❌ Aucun nom d'anime spécifié dans l'URL.");
+      episodeContainer.innerText = "Erreur: Aucun anime précisé.";
+      throw new Error("Anime manquant");
+    }
+
+    const base = `https://anime-sama.fr/catalogue/${anime}`;
     const cors = "https://corsproxy.io/?";
-    const episodeContainer = document.getElementById("episodes-container");
-    const player = document.getElementById("player");
-    document.getElementById("anime-title").innerText = decodeURIComponent(slug.replace(/-/g, " "));
 
     async function tryLoadEpisodes(type = "saison1") {
       const url = `${base}/${type}/${lang}/episodes.js`;
@@ -63,29 +86,31 @@
         const res = await fetch(fullUrl);
         const jsCode = await res.text();
 
-        log("📦 Script récupéré, parsing en cours...");
+        log("📦 Script récupéré, parsing à la main...");
 
-        const sandbox = {};
-        new Function("sandbox", `
-          with(sandbox) {
-            ${jsCode}
-          }
-        `)(sandbox);
-
+        const regex = /var\s+eps(\d+)\s*=\s*\[(.*?)\];/gs;
         const episodes = [];
 
-        // Parcourir toutes les clés eps1, eps2, eps3...
-        for (let key in sandbox) {
-          if (key.startsWith("eps") && Array.isArray(sandbox[key])) {
-            const index = parseInt(key.replace("eps", ""));
-            const urls = sandbox[key];
-            urls.forEach(url => {
-              episodes[index - 1] = { url, index };
-            });
+        let match;
+        while ((match = regex.exec(jsCode)) !== null) {
+          const index = parseInt(match[1]);
+          const arrayContent = match[2]
+            .replace(/[\r\n\t]/g, '') // remove newlines, tabs
+            .trim()
+            .replace(/,\s*$/, ''); // remove trailing comma
+
+          try {
+            const jsonArray = JSON.parse(`[${arrayContent}]`);
+            if (jsonArray.length > 0) {
+              episodes[index - 1] = { url: jsonArray[0], index };
+              log(`✅ Épisode ${index} trouvé.`);
+            }
+          } catch (e) {
+            log(`⚠️ JSON parse échoué pour eps${index}: ${e.message}`);
           }
         }
 
-        if (episodes.length === 0) throw new Error("Aucun épisode trouvé");
+        if (episodes.length === 0) throw new Error("Aucun épisode valide trouvé");
 
         log(`✅ ${episodes.length} épisode(s) chargé(s).`);
         renderEpisodes(episodes);
@@ -98,32 +123,27 @@
 
     function renderEpisodes(episodes) {
       episodeContainer.innerHTML = "";
+      episodes.forEach(ep => {
+        if (!ep) return;
+        const btn = document.createElement("button");
+        btn.className = "episode-btn";
+        btn.textContent = `Épisode ${ep.index}`;
+        btn.onclick = () => {
+          videoPlayer.src = ep.url;
+          log(`🎬 Lecture épisode ${ep.index}`);
+        };
+        episodeContainer.appendChild(btn);
+      });
 
-      const select = document.createElement("select");
-      select.innerHTML = episodes.map(ep =>
-        `<option value="${ep.url}">Épisode ${ep.index}</option>`
-      ).join("");
-
-      select.onchange = () => {
-        const url = select.value;
-        log(`🎬 Lecture: ${url}`);
-        player.src = url;
-      };
-
-      episodeContainer.appendChild(select);
-      player.src = episodes[0].url;
-      log(`🎬 Lecture auto: ${episodes[0].url}`);
+      // Lecture automatique du premier
+      const first = episodes.find(e => e);
+      if (first) {
+        videoPlayer.src = first.url;
+        log("▶️ Lecture auto du premier épisode");
+      }
     }
-
-    // Charger le script global vidéos
-    const scriptVideo = document.createElement("script");
-    scriptVideo.src = cors + "https://anime-sama.fr/js/contenu/script_videos.js?filever=25309";
-    scriptVideo.defer = true;
-    document.body.appendChild(scriptVideo);
-    log("📁 Script vidéos global injecté.");
 
     tryLoadEpisodes();
   </script>
-
 </body>
 </html>
