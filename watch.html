@@ -4,8 +4,18 @@
   <meta charset="UTF-8">
   <title>MyAnime Watch</title>
   <style>
-    body { font-family: sans-serif; background: #111; color: #eee; text-align: center; margin: 0; padding: 1rem; }
-    select, iframe { margin: 10px; padding: 10px; }
+    body {
+      font-family: sans-serif;
+      background: #111;
+      color: #eee;
+      text-align: center;
+      margin: 0;
+      padding: 1rem;
+    }
+    select, iframe {
+      margin: 10px;
+      padding: 10px;
+    }
     #log {
       background: #222;
       color: #0f0;
@@ -22,7 +32,7 @@
 <body>
 
   <h1 id="anime-title">Chargement...</h1>
-  <div id="episodes-container"></div>
+  <div id="episodes-container">Chargement des épisodes...</div>
   <iframe id="player" width="100%" height="480" frameborder="0" allowfullscreen></iframe>
 
   <div id="log">[Logs]<br></div>
@@ -45,53 +55,73 @@
     document.getElementById("anime-title").innerText = decodeURIComponent(slug.replace(/-/g, " "));
 
     async function tryLoadEpisodes(type = "saison1") {
-      const url = `${base}/${type}/${lang}/episodes.js?filever=237`;
+      const url = `${base}/${type}/${lang}/episodes.js`;
       const fullUrl = cors + url;
-      log(`🔄 Tentative chargement: ${fullUrl}`);
+      log(`🔄 Chargement de: ${fullUrl}`);
 
       try {
         const res = await fetch(fullUrl);
         const jsCode = await res.text();
 
-        log("📦 Script récupéré. Exécution...");
+        log("📦 Script récupéré, parsing en cours...");
 
-        // Interpréter le contenu JS dans un scope isolé
         const sandbox = {};
-        new Function("window", jsCode)(sandbox);
+        new Function("sandbox", `
+          with(sandbox) {
+            ${jsCode}
+          }
+        `)(sandbox);
 
-        const episodes = sandbox.episodes || window.episodes;
-        log(`✅ ${episodes?.length || 0} épisode(s) détecté(s).`);
+        const episodes = [];
 
-        if (!episodes || episodes.length === 0) throw new Error("Pas d'épisodes");
+        // Parcourir toutes les clés eps1, eps2, eps3...
+        for (let key in sandbox) {
+          if (key.startsWith("eps") && Array.isArray(sandbox[key])) {
+            const index = parseInt(key.replace("eps", ""));
+            const urls = sandbox[key];
+            urls.forEach(url => {
+              episodes[index - 1] = { url, index };
+            });
+          }
+        }
 
+        if (episodes.length === 0) throw new Error("Aucun épisode trouvé");
+
+        log(`✅ ${episodes.length} épisode(s) chargé(s).`);
         renderEpisodes(episodes);
-      } catch (e) {
-        log(`❌ Erreur chargement depuis ${type}: ${e.message}`);
+      } catch (err) {
+        log(`❌ Erreur: ${err.message}`);
         if (type === "saison1") return tryLoadEpisodes("film");
-        else episodeContainer.innerText = "Impossible de charger les épisodes.";
+        episodeContainer.innerText = "Impossible de charger les épisodes.";
       }
     }
 
     function renderEpisodes(episodes) {
+      episodeContainer.innerHTML = "";
+
       const select = document.createElement("select");
-      select.innerHTML = episodes.map((ep, i) => `<option value="${ep.url}">Épisode ${i + 1}</option>`).join("");
+      select.innerHTML = episodes.map(ep =>
+        `<option value="${ep.url}">Épisode ${ep.index}</option>`
+      ).join("");
+
       select.onchange = () => {
-        log(`🎬 Lecture: ${select.value}`);
-        player.src = select.value;
+        const url = select.value;
+        log(`🎬 Lecture: ${url}`);
+        player.src = url;
       };
+
       episodeContainer.appendChild(select);
       player.src = episodes[0].url;
       log(`🎬 Lecture auto: ${episodes[0].url}`);
     }
 
-    // Charger script vidéo principal
+    // Charger le script global vidéos
     const scriptVideo = document.createElement("script");
     scriptVideo.src = cors + "https://anime-sama.fr/js/contenu/script_videos.js?filever=25309";
     scriptVideo.defer = true;
     document.body.appendChild(scriptVideo);
     log("📁 Script vidéos global injecté.");
 
-    // Lancer le chargement des épisodes
     tryLoadEpisodes();
   </script>
 
