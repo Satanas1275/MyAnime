@@ -4,8 +4,19 @@
   <meta charset="UTF-8">
   <title>MyAnime Watch</title>
   <style>
-    body { font-family: sans-serif; background: #111; color: #eee; text-align: center; }
+    body { font-family: sans-serif; background: #111; color: #eee; text-align: center; margin: 0; padding: 1rem; }
     select, iframe { margin: 10px; padding: 10px; }
+    #log {
+      background: #222;
+      color: #0f0;
+      text-align: left;
+      font-size: 0.8rem;
+      max-height: 200px;
+      overflow-y: auto;
+      margin-top: 2rem;
+      padding: 1rem;
+      border-top: 1px solid #444;
+    }
   </style>
 </head>
 <body>
@@ -14,7 +25,15 @@
   <div id="episodes-container"></div>
   <iframe id="player" width="100%" height="480" frameborder="0" allowfullscreen></iframe>
 
+  <div id="log">[Logs]<br></div>
+
   <script>
+    const logBox = document.getElementById("log");
+    function log(msg) {
+      logBox.innerHTML += msg + "<br>";
+      logBox.scrollTop = logBox.scrollHeight;
+    }
+
     const params = new URLSearchParams(location.search);
     const slug = params.get('V');
     const lang = params.get('lang') || 'vf';
@@ -28,20 +47,26 @@
     async function tryLoadEpisodes(type = "saison1") {
       const url = `${base}/${type}/${lang}/episodes.js`;
       const fullUrl = cors + url;
+      log(`🔄 Tentative chargement: ${fullUrl}`);
 
       try {
         const res = await fetch(fullUrl);
         const jsCode = await res.text();
 
-        // Interpréter le contenu du fichier JS (ex: `var episodes = [...]`)
+        log("📦 Script récupéré. Exécution...");
+
+        // Interpréter le contenu JS dans un scope isolé
         const sandbox = {};
         new Function("window", jsCode)(sandbox);
+
         const episodes = sandbox.episodes || window.episodes;
+        log(`✅ ${episodes?.length || 0} épisode(s) détecté(s).`);
 
         if (!episodes || episodes.length === 0) throw new Error("Pas d'épisodes");
 
         renderEpisodes(episodes);
       } catch (e) {
+        log(`❌ Erreur chargement depuis ${type}: ${e.message}`);
         if (type === "saison1") return tryLoadEpisodes("film");
         else episodeContainer.innerText = "Impossible de charger les épisodes.";
       }
@@ -50,20 +75,23 @@
     function renderEpisodes(episodes) {
       const select = document.createElement("select");
       select.innerHTML = episodes.map((ep, i) => `<option value="${ep.url}">Épisode ${i + 1}</option>`).join("");
-      select.onchange = () => player.src = select.value;
+      select.onchange = () => {
+        log(`🎬 Lecture: ${select.value}`);
+        player.src = select.value;
+      };
       episodeContainer.appendChild(select);
-
-      // Charger premier épisode par défaut
       player.src = episodes[0].url;
+      log(`🎬 Lecture auto: ${episodes[0].url}`);
     }
 
-    // Charger le script vidéos global
+    // Charger script vidéo principal
     const scriptVideo = document.createElement("script");
     scriptVideo.src = cors + "https://anime-sama.fr/js/contenu/script_videos.js?filever=25309";
     scriptVideo.defer = true;
     document.body.appendChild(scriptVideo);
+    log("📁 Script vidéos global injecté.");
 
-    // Charger les épisodes
+    // Lancer le chargement des épisodes
     tryLoadEpisodes();
   </script>
 
