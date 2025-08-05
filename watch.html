@@ -23,6 +23,10 @@
       border-radius: 8px;
       background-color: black;
     }
+    #controls {
+      text-align: center;
+      margin: 1rem 0;
+    }
     #episode-list {
       display: flex;
       flex-wrap: wrap;
@@ -52,6 +56,7 @@
       color: white;
       border-radius: 4px;
       padding: 0.3rem;
+      margin-left: 0.5rem;
     }
     #logs {
       background-color: #111;
@@ -69,8 +74,13 @@
 </head>
 <body>
   <h1>Lecture d'anime</h1>
-  <iframe id="video-player" allowfullscreen></iframe>
 
+  <div id="controls">
+    <label for="lang-select">Langue :</label>
+    <select id="lang-select"></select>
+  </div>
+
+  <iframe id="video-player" allowfullscreen></iframe>
   <div id="episode-list"></div>
   <div id="logs">[ Logs chargement... ]</div>
 
@@ -78,6 +88,7 @@
     const logs = document.getElementById("logs");
     const player = document.getElementById("video-player");
     const episodeList = document.getElementById("episode-list");
+    const langSelect = document.getElementById("lang-select");
 
     function log(msg) {
       logs.innerHTML += "\n→ " + msg;
@@ -88,19 +99,30 @@
       const url = new URL(window.location.href);
       return {
         title: url.searchParams.get("V") || "inconnu",
-        lang: url.searchParams.get("lang") || "vf"
+        langs: (url.searchParams.get("lang") || "vf").split(",").map(l => l.trim())
       };
     }
 
-    async function loadEpisodes() {
-      const { title, lang } = getQueryParams();
+    function createLangSelector(langs, currentLang, onChange) {
+      langSelect.innerHTML = "";
+      langs.forEach(lang => {
+        const opt = document.createElement("option");
+        opt.value = lang;
+        opt.textContent = lang.toUpperCase();
+        if (lang === currentLang) opt.selected = true;
+        langSelect.appendChild(opt);
+      });
+      langSelect.onchange = () => {
+        onChange(langSelect.value);
+      };
+    }
+
+    async function loadEpisodesForLang(title, lang) {
       const baseURL = `https://corsproxy.io/?https://anime-sama.fr/catalogue/${title}`;
       const urls = [
         `${baseURL}/saison1/${lang}/episodes.js`,
         `${baseURL}/film/${lang}/episodes.js`
       ];
-
-      let scriptContent = null;
 
       for (const url of urls) {
         log(`🔄 Chargement de: ${url}`);
@@ -109,17 +131,38 @@
           if (!res.ok) continue;
 
           const text = await res.text();
-          scriptContent = text;
           log(`📦 Script récupéré, parsing à la main...`);
-          break;
+          return text;
         } catch (e) {
           log(`❌ Échec de chargement: ${url}`);
         }
       }
 
+      return null;
+    }
+
+    async function loadEpisodes(title, langs, activeLangIndex = 0) {
+      episodeList.innerHTML = "";
+      player.src = "";
+
+      const currentLang = langs[activeLangIndex];
+      createLangSelector(langs, currentLang, (newLang) => {
+        const index = langs.indexOf(newLang);
+        if (index !== -1) {
+          logs.innerHTML += `\n\n🌀 Rechargement avec la langue : ${newLang}`;
+          loadEpisodes(title, langs, index);
+        }
+      });
+
+      const scriptContent = await loadEpisodesForLang(title, currentLang);
       if (!scriptContent) {
-        log("❌ Aucun fichier episodes.js trouvé.");
-        return;
+        if (activeLangIndex + 1 < langs.length) {
+          log(`⚠️ Impossible de charger ${currentLang}, on tente ${langs[activeLangIndex + 1]}...`);
+          return loadEpisodes(title, langs, activeLangIndex + 1);
+        } else {
+          log("❌ Aucun fichier episodes.js trouvé pour toutes les langues.");
+          return;
+        }
       }
 
       const regex = /var\s+(eps\d+)\s*=\s*(\[[\s\S]*?\]);/g;
@@ -147,7 +190,7 @@
       }
 
       if (episodeMap.size === 0) {
-        log("❌ Erreur: Aucun épisode valide trouvé");
+        log("❌ Aucun épisode valide trouvé");
         return;
       }
 
@@ -184,7 +227,6 @@
         episodeList.appendChild(wrapper);
       });
 
-      // Auto lecture du premier lecteur dispo
       const firstEp = [...episodeMap.entries()][0]?.[1]?.[0]?.url;
       if (firstEp) {
         player.src = firstEp;
@@ -194,7 +236,8 @@
       }
     }
 
-    loadEpisodes();
+    const { title, langs } = getQueryParams();
+    loadEpisodes(title, langs);
   </script>
 </body>
 </html>
