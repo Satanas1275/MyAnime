@@ -45,7 +45,7 @@
     document.getElementById("anime-title").innerText = decodeURIComponent(slug.replace(/-/g, " "));
 
     async function tryLoadEpisodes(type = "saison1") {
-      const url = `${base}/${type}/${lang}/episodes.js`;
+      const url = `${base}/${type}/${lang}/episodes.js?filever=237`;
       const fullUrl = cors + url;
       log(`🔄 Tentative chargement: ${fullUrl}`);
 
