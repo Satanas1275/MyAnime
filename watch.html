@@ -2,208 +2,181 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <title>Lecture d'anime</title>
+  <title>Watch Anime</title>
   <style>
-    body {
-      background-color: #1a1a1a;
-      color: white;
-      font-family: sans-serif;
-      margin: 0;
-      padding: 1rem;
-    }
-    h1 {
-      text-align: center;
-    }
-    #video-player {
-      display: block;
-      margin: 2rem auto;
-      width: 90%;
-      height: 360px;
-      border: none;
-      border-radius: 8px;
-      background-color: black;
-    }
-    #episode-list {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
-      gap: 1rem;
-      margin-top: 1rem;
-    }
-    .episode-group {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-    }
-    .episode-btn {
-      background-color: #2c2c2c;
-      color: white;
-      border: none;
-      padding: 0.5rem 1rem;
-      border-radius: 6px;
-      cursor: pointer;
-      margin-bottom: 0.3rem;
-    }
-    .episode-btn:hover {
-      background-color: #3c3c3c;
-    }
-    select {
-      background-color: #222;
-      color: white;
-      border-radius: 4px;
-      padding: 0.3rem;
-    }
-    #logs {
-      background-color: #111;
-      color: #0f0;
-      padding: 1rem;
-      margin-top: 2rem;
-      font-family: monospace;
-      font-size: 0.9rem;
-      border-radius: 6px;
-      max-height: 200px;
-      overflow-y: auto;
-      white-space: pre-wrap;
-    }
+    body { font-family: sans-serif; background: #111; color: #fff; margin: 0; padding: 10px; }
+    #logs { background: #222; padding: 10px; font-size: 12px; max-height: 200px; overflow: auto; white-space: pre-wrap; border: 1px solid #444; }
+    select, button { font-size: 14px; margin: 5px; }
+    iframe { width: 100%; height: 360px; border: none; margin-top: 10px; }
   </style>
 </head>
 <body>
-  <h1>Lecture d'anime</h1>
-  <iframe id="video-player" allowfullscreen></iframe>
-
-  <div id="episode-list"></div>
+  <h2>🎥 Lecture Anime</h2>
+  <div>
+    <label>Langue : </label>
+    <select id="langSelect"></select>
+    <label>Épisode : </label>
+    <select id="episodeSelect"></select>
+    <label>Lecteur : </label>
+    <select id="playerSelect"></select>
+  </div>
+  <iframe id="videoFrame" src=""></iframe>
   <div id="logs">[ Logs chargement... ]</div>
 
   <script>
-    const logs = document.getElementById("logs");
-    const player = document.getElementById("video-player");
-    const episodeList = document.getElementById("episode-list");
+    const log = msg => logs.textContent += '\n→ ' + msg;
 
-    function log(msg) {
-      logs.innerHTML += "\n→ " + msg;
-      logs.scrollTop = logs.scrollHeight;
-    }
+    const params = new URLSearchParams(location.search);
+    const title = params.get("V");
+    const langParam = params.get("lang") || "vf,vostfr,vo";
+    const langs = langParam.split(',').map(l => l.trim().toLowerCase());
+    const langPriority = ['vf', 'vostfr', 'vo'];
+    const selectedLang = langPriority.find(l => langs.includes(l)) || langs[0];
 
-    function getQueryParams() {
-      const url = new URL(window.location.href);
-      return {
-        title: url.searchParams.get("V") || "inconnu",
-        lang: url.searchParams.get("lang") || "vf"
-      };
-    }
+    const epSelect = document.getElementById("episodeSelect");
+    const playerSelect = document.getElementById("playerSelect");
+    const videoFrame = document.getElementById("videoFrame");
+    const langSelect = document.getElementById("langSelect");
 
-    function isLecteurValide(url) {
-      const whitelist = ["sendvid", "vidmoly", "dood", "streamtape", "uqload"];
-      return whitelist.some(domain => url.includes(domain));
-    }
+    let allData = {}; // { lang: { eps1: [...], eps2: [...], ... } }
+    let currentLang = selectedLang;
+    let currentEps = 1;
+    let currentPlayers = [];
 
-    async function loadEpisodes() {
-      const { title, lang } = getQueryParams();
-      const baseURL = `https://corsproxy.io/?https://anime-sama.fr/catalogue/${title}`;
-      const urls = [
-        `${baseURL}/saison1/${lang}/episodes.js`,
-        `${baseURL}/film/${lang}/episodes.js`
-      ];
+    langs.forEach(l => {
+      let opt = document.createElement("option");
+      opt.value = l;
+      opt.textContent = l.toUpperCase();
+      if (l === selectedLang) opt.selected = true;
+      langSelect.appendChild(opt);
+    });
 
-      let scriptContent = null;
+    langSelect.onchange = () => {
+      currentLang = langSelect.value;
+      loadEpisodesUI(currentLang);
+    };
 
-      for (const url of urls) {
+    async function fetchScript(url) {
+      try {
         log(`🔄 Chargement de: ${url}`);
-        try {
-          const res = await fetch(url);
-          if (!res.ok) continue;
-
-          const text = await res.text();
-          scriptContent = text;
-          log(`📦 Script récupéré, parsing à la main...`);
-          break;
-        } catch (e) {
-          log(`❌ Échec de chargement: ${url}`);
-        }
-      }
-
-      if (!scriptContent) {
-        log("❌ Aucun fichier episodes.js trouvé.");
-        return;
-      }
-
-      const regex = /var\s+(eps\d+)\s*=\s*(\[[\s\S]*?\]);/g;
-      const episodeMap = new Map();
-      let match;
-
-      while ((match = regex.exec(scriptContent)) !== null) {
-        const key = match[1];
-        let rawArray = match[2]
-          .replace(/[\r\n\t]/g, '')
-          .replace(/'/g, '"')
-          .replace(/,\s*]/g, ']');
-
-        try {
-          const episodes = JSON.parse(rawArray);
-          episodes.forEach((url, index) => {
-            const epNum = index + 1;
-            if (!episodeMap.has(epNum)) episodeMap.set(epNum, []);
-            if (isLecteurValide(url)) {
-              episodeMap.get(epNum).push({ source: key, url });
-              log(`✅ ${key} - épisode ${epNum} ajouté`);
-            } else {
-              log(`⛔ ${key} - épisode ${epNum} ignoré (lecteur bloqué)`);
-            }
-          });
-        } catch (e) {
-          log(`⚠️ JSON parse échoué pour ${key}: ${e.message}`);
-        }
-      }
-
-      if (episodeMap.size === 0) {
-        log("❌ Erreur: Aucun épisode valide trouvé");
-        return;
-      }
-
-      log(`✅ ${episodeMap.size} épisode(s) uniques chargé(s).`);
-
-      [...episodeMap.entries()].sort((a, b) => a[0] - b[0]).forEach(([epNum, sources]) => {
-        const wrapper = document.createElement("div");
-        wrapper.className = "episode-group";
-
-        const btn = document.createElement("button");
-        btn.className = "episode-btn";
-        btn.textContent = `Épisode ${epNum}`;
-        btn.onclick = () => {
-          player.src = sources[0].url;
-        };
-        wrapper.appendChild(btn);
-
-        if (sources.length > 1) {
-          const selector = document.createElement("select");
-          sources.forEach((src, i) => {
-            const opt = document.createElement("option");
-            opt.value = src.url;
-            opt.textContent = `Lecteur ${i + 1}`;
-            selector.appendChild(opt);
-          });
-
-          selector.onchange = () => {
-            player.src = selector.value;
-          };
-
-          wrapper.appendChild(selector);
-        }
-
-        episodeList.appendChild(wrapper);
-      });
-
-      // Lecture automatique du 1er épisode jouable
-      const firstEp = [...episodeMap.entries()][0]?.[1]?.[0]?.url;
-      if (firstEp) {
-        player.src = firstEp;
-        log("▶️ Lecture auto du premier épisode");
-      } else {
-        log("⚠️ Aucun lecteur valide pour l'épisode 1");
+        const res = await fetch("https://corsproxy.io/?" + url);
+        const txt = await res.text();
+        log("📦 Script récupéré, parsing à la main...");
+        return txt;
+      } catch (e) {
+        log("❌ Erreur de chargement");
+        return null;
       }
     }
 
-    loadEpisodes();
+    function extractEpisodeLinks(scriptText) {
+      const regex = /var (eps\d+) = \[(.*?)\];/gs;
+      let result = {};
+      let match;
+      while ((match = regex.exec(scriptText)) !== null) {
+        const epVar = match[1];
+        const links = match[2].split(",").map(l => l.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
+        if (!result[epVar]) result[epVar] = [];
+        result[epVar].push(...links);
+        log(`✅ ${epVar} - ${links.length} lecteur(s) trouvé(s)`);
+      }
+      return result;
+    }
+
+    async function testLink(url, timeout = 3000) {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeout);
+        await fetch("https://corsproxy.io/?" + url, { signal: controller.signal, method: "HEAD" });
+        clearTimeout(timer);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    async function loadEpisodes(lang) {
+      const base = `https://anime-sama.fr/catalogue/${title}/`;
+      const tries = [`saison1/${lang}/episodes.js`, `film/${lang}/episodes.js`];
+      for (const path of tries) {
+        const fullURL = base + path;
+        const txt = await fetchScript(fullURL);
+        if (txt) {
+          const data = extractEpisodeLinks(txt);
+          if (Object.keys(data).length) return data;
+        }
+      }
+      return {};
+    }
+
+    async function loadEpisodesUI(lang) {
+      epSelect.innerHTML = "";
+      playerSelect.innerHTML = "";
+      currentPlayers = [];
+
+      const data = allData[lang];
+      if (!data) return;
+
+      const maxEpisodes = Math.max(...Object.keys(data).map(k => k.replace("eps", "")).map(Number));
+      for (let i = 1; i <= maxEpisodes; i++) {
+        const opt = document.createElement("option");
+        opt.value = i;
+        opt.textContent = `Épisode ${i}`;
+        epSelect.appendChild(opt);
+      }
+
+      epSelect.onchange = () => {
+        currentEps = parseInt(epSelect.value);
+        updatePlayers();
+      };
+
+      updatePlayers();
+    }
+
+    async function updatePlayers() {
+      const epsKey = "eps" + currentEps;
+      const links = allData[currentLang][epsKey] || [];
+      currentPlayers = [];
+
+      playerSelect.innerHTML = "";
+
+      for (let i = 0; i < links.length; i++) {
+        const isValid = await testLink(links[i]);
+        if (isValid) {
+          currentPlayers.push(links[i]);
+          const opt = document.createElement("option");
+          opt.value = i;
+          opt.textContent = `Lecteur ${i + 1}`;
+          playerSelect.appendChild(opt);
+        }
+      }
+
+      if (currentPlayers.length > 0) {
+        videoFrame.src = currentPlayers[0];
+        playerSelect.onchange = () => {
+          const id = parseInt(playerSelect.value);
+          videoFrame.src = currentPlayers[id];
+        };
+        log(`▶️ Lecture auto du premier lecteur de l'épisode ${currentEps}`);
+      } else {
+        videoFrame.src = "";
+        log("❌ Aucun lecteur valide trouvé");
+      }
+    }
+
+    (async () => {
+      for (const l of langs) {
+        const data = await loadEpisodes(l);
+        if (Object.keys(data).length > 0) {
+          allData[l] = data;
+          log(`✅ Episodes chargés pour ${l.toUpperCase()}`);
+        } else {
+          log(`❌ Aucun épisode trouvé pour ${l.toUpperCase()}`);
+        }
+      }
+
+      loadEpisodesUI(currentLang);
+    })();
   </script>
 </body>
 </html>
