@@ -40,7 +40,7 @@
 
     let allData = {}; // { lang: { eps1: [...], eps2: [...], ... } }
     let currentLang = selectedLang;
-    let currentEps = 1;
+    let currentEps = "eps1";
     let currentPlayers = [];
 
     langs.forEach(l => {
@@ -117,25 +117,30 @@
       const data = allData[lang];
       if (!data) return;
 
-      const maxEpisodes = Math.max(...Object.keys(data).map(k => k.replace("eps", "")).map(Number));
-      for (let i = 1; i <= maxEpisodes; i++) {
+      const episodes = Object.keys(data).sort((a, b) => {
+        return parseInt(a.replace("eps", "")) - parseInt(b.replace("eps", ""));
+      });
+
+      episodes.forEach(epsKey => {
+        const num = epsKey.replace("eps", "");
         const opt = document.createElement("option");
-        opt.value = i;
-        opt.textContent = `Épisode ${i}`;
+        opt.value = epsKey;
+        opt.textContent = `Épisode ${num}`;
         epSelect.appendChild(opt);
-      }
+      });
 
       epSelect.onchange = () => {
-        currentEps = parseInt(epSelect.value);
+        currentEps = epSelect.value;
         updatePlayers();
       };
 
+      currentEps = episodes[0];
+      epSelect.value = currentEps;
       updatePlayers();
     }
 
     async function updatePlayers() {
-      const epsKey = "eps" + currentEps;
-      const links = allData[currentLang][epsKey] || [];
+      const links = allData[currentLang][currentEps] || [];
       currentPlayers = [];
 
       playerSelect.innerHTML = "";
@@ -157,7 +162,7 @@
           const id = parseInt(playerSelect.value);
           videoFrame.src = currentPlayers[id];
         };
-        log(`▶️ Lecture auto du premier lecteur de l'épisode ${currentEps}`);
+        log(`▶️ Lecture auto de l'épisode ${currentEps.replace("eps", "")} - Lecteur 1`);
       } else {
         videoFrame.src = "";
         log("❌ Aucun lecteur valide trouvé");
