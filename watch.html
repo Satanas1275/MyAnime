@@ -2,188 +2,199 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <title>DiscuAnime - Watch</title>
+  <title>Lecture d'anime</title>
   <style>
-    body { font-family: sans-serif; background: #111; color: #eee; padding: 10px; }
-    iframe { width: 100%; height: 480px; border: none; border-radius: 8px; background: #000; margin-bottom: 10px; }
-    select, button { padding: 6px; margin: 5px 0; border-radius: 4px; border: none; }
-    #log { background: #222; padding: 10px; font-size: 12px; white-space: pre-wrap; height: 200px; overflow: auto; margin-top: 10px; border-radius: 8px; }
-    .hidden { display: none; }
+    body {
+      background-color: #1a1a1a;
+      color: white;
+      font-family: sans-serif;
+      margin: 0;
+      padding: 1rem;
+    }
+    h1 {
+      text-align: center;
+    }
+    #video-player {
+      display: block;
+      margin: 2rem auto;
+      width: 90%;
+      height: 360px;
+      border: none;
+      border-radius: 8px;
+      background-color: black;
+    }
+    #episode-list {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+    .episode-group {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .episode-btn {
+      background-color: #2c2c2c;
+      color: white;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      cursor: pointer;
+      margin-bottom: 0.3rem;
+    }
+    .episode-btn:hover {
+      background-color: #3c3c3c;
+    }
+    select {
+      background-color: #222;
+      color: white;
+      border-radius: 4px;
+      padding: 0.3rem;
+    }
+    #logs {
+      background-color: #111;
+      color: #0f0;
+      padding: 1rem;
+      margin-top: 2rem;
+      font-family: monospace;
+      font-size: 0.9rem;
+      border-radius: 6px;
+      max-height: 200px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
   </style>
 </head>
 <body>
+  <h1>Lecture d'anime</h1>
+  <iframe id="video-player" allowfullscreen></iframe>
 
-<h1>🎬 Watch Anime</h1>
-<iframe id="videoPlayer" src=""></iframe>
+  <div id="episode-list"></div>
+  <div id="logs">[ Logs chargement... ]</div>
 
-<div>
-  <label>Épisode:</label>
-  <select id="episodeSelector"></select>
+  <script>
+    const logs = document.getElementById("logs");
+    const player = document.getElementById("video-player");
+    const episodeList = document.getElementById("episode-list");
 
-  <label>Lecteur:</label>
-  <select id="lecteurSelector"></select>
+    function log(msg) {
+      logs.innerHTML += "\n→ " + msg;
+      logs.scrollTop = logs.scrollHeight;
+    }
 
-  <button onclick="playSelected()">▶️ Lancer</button>
-</div>
+    function getQueryParams() {
+      const url = new URL(window.location.href);
+      return {
+        title: url.searchParams.get("V") || "inconnu",
+        lang: url.searchParams.get("lang") || "vf"
+      };
+    }
 
-<div id="log">[ Logs chargement... ]</div>
+    async function loadEpisodes() {
+      const { title, lang } = getQueryParams();
+      const baseURL = `https://corsproxy.io/?https://anime-sama.fr/catalogue/${title}`;
+      const urls = [
+        `${baseURL}/saison1/${lang}/episodes.js`,
+        `${baseURL}/film/${lang}/episodes.js`
+      ];
 
-<script>
-const log = (msg) => {
-  document.getElementById("log").textContent += "\n→ " + msg;
-};
+      let scriptContent = null;
 
-const getParam = (name) => {
-  const params = new URLSearchParams(window.location.search);
-  return params.get(name) || "";
-};
-
-async function fetchEpisodeScript() {
-  const animeSlug = getParam("V");
-  const lang = getParam("lang") || "vf";
-
-  const basePaths = [
-    `https://anime-sama.fr/catalogue/${animeSlug}/saison1/${lang}/episodes.js`,
-    `https://anime-sama.fr/catalogue/${animeSlug}/film/${lang}/episodes.js`,
-  ];
-
-  for (const path of basePaths) {
-    const proxiedURL = `https://corsproxy.io/?${path}`;
-    log(`🔄 Chargement de: ${proxiedURL}`);
-
-    try {
-      const res = await fetch(proxiedURL);
-      const scriptText = await res.text();
-      log(`📦 Script récupéré, parsing à la main...`);
-
-      const regex = /var\s+(eps\d+)\s*=\s*(\[[\s\S]*?\]);/g;
-      const matchMap = new Map();
-      let m;
-      while ((m = regex.exec(scriptText))) {
+      for (const url of urls) {
+        log(`🔄 Chargement de: ${url}`);
         try {
-          const array = JSON.parse(m[2].replace(/'/g, '"').replace(/,\s*]/g, ']'));
-          matchMap.set(m[1], array);
-        } catch (err) {
-          log(`⚠️ JSON parse échoué pour ${m[1]}: ${err.message}`);
+          const res = await fetch(url);
+          if (!res.ok) continue;
+
+          const text = await res.text();
+          scriptContent = text;
+          log(`📦 Script récupéré, parsing à la main...`);
+          break;
+        } catch (e) {
+          log(`❌ Échec de chargement: ${url}`);
         }
       }
 
-      if (matchMap.size > 0) return matchMap;
-
-    } catch (err) {
-      log(`❌ Erreur chargement: ${err.message}`);
-    }
-  }
-
-  log("❌ Erreur: Aucun épisode valide trouvé");
-  return null;
-}
-
-function testLecteur(url, timeout = 5000) {
-  return new Promise((resolve) => {
-    const iframe = document.createElement("iframe");
-    iframe.style.display = "none";
-    iframe.src = url;
-
-    let settled = false;
-
-    const finish = (ok) => {
-      if (!settled) {
-        settled = true;
-        iframe.remove();
-        resolve(ok);
+      if (!scriptContent) {
+        log("❌ Aucun fichier episodes.js trouvé.");
+        return;
       }
-    };
 
-    iframe.onload = () => finish(true);
-    iframe.onerror = () => finish(false);
-    document.body.appendChild(iframe);
+      const regex = /var\s+(eps\d+)\s*=\s*(\[[\s\S]*?\]);/g;
+      const episodeMap = new Map();
+      let match;
 
-    setTimeout(() => finish(false), timeout);
-  });
-}
+      while ((match = regex.exec(scriptContent)) !== null) {
+        const key = match[1];
+        let rawArray = match[2]
+          .replace(/[\r\n\t]/g, '')
+          .replace(/'/g, '"')
+          .replace(/,\s*]/g, ']');
 
-async function loadAndFilter() {
-  const episodeMap = new Map();
-  const lecteurs = await fetchEpisodeScript();
-  if (!lecteurs) return;
-
-  let total = 0;
-  for (const [lecteur, urls] of lecteurs) {
-    for (let i = 0; i < urls.length; i++) {
-      const epNum = i + 1;
-      const url = urls[i];
-      total++;
-      log(`⏳ Test lecteur ${lecteur} - épisode ${epNum}...`);
-      const ok = await testLecteur(url);
-      if (!ok) {
-        log(`⛔ Lecteur HS: ${lecteur} - épisode ${epNum}`);
-        continue;
+        try {
+          const episodes = JSON.parse(rawArray);
+          episodes.forEach((url, index) => {
+            const epNum = index + 1;
+            if (!episodeMap.has(epNum)) episodeMap.set(epNum, []);
+            episodeMap.get(epNum).push({ source: key, url });
+            log(`✅ ${key} - épisode ${epNum} trouvé`);
+          });
+        } catch (e) {
+          log(`⚠️ JSON parse échoué pour ${key}: ${e.message}`);
+        }
       }
-      log(`✅ ${lecteur} - épisode ${epNum} trouvé`);
-      if (!episodeMap.has(epNum)) episodeMap.set(epNum, []);
-      episodeMap.get(epNum).push({ lecteur, url });
+
+      if (episodeMap.size === 0) {
+        log("❌ Erreur: Aucun épisode valide trouvé");
+        return;
+      }
+
+      log(`✅ ${episodeMap.size} épisode(s) uniques chargé(s).`);
+
+      [...episodeMap.entries()].sort((a, b) => a[0] - b[0]).forEach(([epNum, sources]) => {
+        const wrapper = document.createElement("div");
+        wrapper.className = "episode-group";
+
+        const btn = document.createElement("button");
+        btn.className = "episode-btn";
+        btn.textContent = `Épisode ${epNum}`;
+        btn.onclick = () => {
+          player.src = sources[0].url;
+        };
+        wrapper.appendChild(btn);
+
+        if (sources.length > 1) {
+          const selector = document.createElement("select");
+          sources.forEach((src, i) => {
+            const opt = document.createElement("option");
+            opt.value = src.url;
+            opt.textContent = `Lecteur ${i + 1}`;
+            selector.appendChild(opt);
+          });
+
+          selector.onchange = () => {
+            player.src = selector.value;
+          };
+
+          wrapper.appendChild(selector);
+        }
+
+        episodeList.appendChild(wrapper);
+      });
+
+      // Auto lecture du premier lecteur dispo
+      const firstEp = [...episodeMap.entries()][0]?.[1]?.[0]?.url;
+      if (firstEp) {
+        player.src = firstEp;
+        log("▶️ Lecture auto du premier épisode");
+      } else {
+        log("⚠️ Aucun lecteur dispo pour l'épisode 1");
+      }
     }
-  }
 
-  if (episodeMap.size === 0) {
-    log("❌ Aucun lecteur valide trouvé.");
-    return;
-  }
-
-  log(`✅ ${total} lecteurs testés. ${episodeMap.size} épisode(s) disponible(s).`);
-  fillSelectors(episodeMap);
-}
-
-function fillSelectors(episodeMap) {
-  const epSelect = document.getElementById("episodeSelector");
-  const lecteurSelect = document.getElementById("lecteurSelector");
-
-  for (const epNum of [...episodeMap.keys()].sort((a, b) => a - b)) {
-    const opt = document.createElement("option");
-    opt.value = epNum;
-    opt.textContent = `Épisode ${epNum}`;
-    epSelect.appendChild(opt);
-  }
-
-  epSelect.onchange = () => {
-    lecteurSelect.innerHTML = "";
-    const epNum = parseInt(epSelect.value);
-    const lecteurs = episodeMap.get(epNum) || [];
-    lecteurs.forEach((entry, i) => {
-      const opt = document.createElement("option");
-      opt.value = i;
-      opt.textContent = `${entry.lecteur}`;
-      lecteurSelect.appendChild(opt);
-    });
-  };
-
-  epSelect.value = [...episodeMap.keys()][0];
-  epSelect.dispatchEvent(new Event("change"));
-  playSelected(episodeMap);
-}
-
-function playSelected(map = null) {
-  const epNum = parseInt(document.getElementById("episodeSelector").value);
-  const lecteurIdx = parseInt(document.getElementById("lecteurSelector").value);
-  const lecteurs = map ? map.get(epNum) : null;
-
-  const url = lecteurs
-    ? lecteurs[lecteurIdx]?.url
-    : currentEpisodes.get(epNum)?.[lecteurIdx]?.url;
-
-  if (url) {
-    document.getElementById("videoPlayer").src = url;
-    log(`▶️ Lecture épisode ${epNum}, lecteur ${lecteurIdx + 1}`);
-  } else {
-    log(`❌ Aucun lecteur valide pour cet épisode`);
-  }
-}
-
-window.onload = () => {
-  loadAndFilter();
-};
-</script>
-
+    loadEpisodes();
+  </script>
 </body>
 </html>
