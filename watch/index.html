@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>Lecture d'anime</title>
+  <style>
+    body {
+      background-color: #1a1a1a;
+      color: white;
+      font-family: sans-serif;
+      margin: 0;
+      padding: 1rem;
+    }
+    h1 {
+      text-align: center;
+    }
+    #video-player {
+      display: block;
+      margin: 2rem auto;
+      width: 90%;
+      height: 360px;
+      border: none;
+      border-radius: 8px;
+      background-color: black;
+    }
+    #controls {
+      text-align: center;
+      margin: 1rem 0;
+    }
+    #episode-list {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+    .episode-group {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .episode-btn {
+      background-color: #2c2c2c;
+      color: white;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      cursor: pointer;
+      margin-bottom: 0.3rem;
+    }
+    .episode-btn:hover {
+      background-color: #3c3c3c;
+    }
+    select {
+      background-color: #222;
+      color: white;
+      border-radius: 4px;
+      padding: 0.3rem;
+      margin-top: 0.3rem;
+    }
+    .note {
+      font-size: 0.75rem;
+      color: #aaa;
+      margin-top: 0.2rem;
+    }
+  </style>
+</head>
+<body>
+  <h1>Lecture d'anime</h1>
+
+  <div id="controls">
+    <label for="lang-select">Langue :</label>
+    <select id="lang-select"></select>
+  </div>
+
+  <iframe id="video-player" allowfullscreen></iframe>
+  <div id="episode-list"></div>
+
+  <script>
+    const player = document.getElementById("video-player");
+    const episodeList = document.getElementById("episode-list");
+    const langSelect = document.getElementById("lang-select");
+
+    const titleFixes = {
+      "name-in-url": "real-name",
+      "5cm-per-second": "5-cm-per-second",
+      "243-seiin-koukou-danshi-volleybu": "2.43-seiin-koukou-danshi-volley-bu"
+    };
+
+    let playerInfo = {};
+
+    async function loadPlayerInfo() {
+      try {
+        const res = await fetch("player_info.json");
+        if (res.ok) {
+          playerInfo = await res.json();
+        }
+      } catch (e) {
+        playerInfo = {};
+      }
+    }
+
+    function getQueryParams() {
+      const url = new URL(window.location.href);
+      let rawTitle = url.searchParams.get("V") || "inconnu";
+      let langs = (url.searchParams.get("lang") || "vf").split(",").map(l => l.trim().toLowerCase());
+      const saison = parseInt(url.searchParams.get("sa"));
+      const episode = parseInt(url.searchParams.get("ep"));
+      const correctedTitle = titleFixes[rawTitle] || rawTitle;
+      langs = langs.sort((a, b) => (a === "vf" ? -1 : (b === "vf" ? 1 : 0)));
+      return { title: correctedTitle, langs, saison, episode };
+    }
+
+    function createLangSelector(langs, currentLang, onChange) {
+      langSelect.innerHTML = "";
+      langs.forEach(lang => {
+        const opt = document.createElement("option");
+        opt.value = lang;
+        opt.textContent = lang.toUpperCase();
+        if (lang === currentLang) opt.selected = true;
+        langSelect.appendChild(opt);
+      });
+      langSelect.onchange = () => {
+        onChange(langSelect.value);
+      };
+    }
+
+    async function fetchEpisodesScript(title, lang, type) {
+      const url = `https://corsproxy.io/?https://anime-sama.fr/catalogue/${title}/${type}/${lang}/episodes.js`;
+      try {
+        const res = await fetch(url);
+        if (!res.ok) return null;
+        const text = await res.text();
+        return text;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    async function findAvailableSeason(title, lang, forcedSeason = null) {
+      if (forcedSeason) {
+        const type = `saison${forcedSeason}`;
+        const content = await fetchEpisodesScript(title, lang, type);
+        if (content) return { content, type };
+        return null;
+      }
+
+      let seasonNum = 1;
+      while (true) {
+        const type = `saison${seasonNum}`;
+        const content = await fetchEpisodesScript(title, lang, type);
+        if (content) return { content, type };
+        seasonNum++;
+        if (seasonNum > 10) break;
+      }
+
+      const filmContent = await fetchEpisodesScript(title, lang, "film");
+      if (filmContent) return { content: filmContent, type: "film" };
+
+      return null;
+    }
+
+    function getPlayerNote(url) {
+      for (const domain in playerInfo) {
+        if (url.includes(domain)) {
+          return playerInfo[domain];
+        }
+      }
+      return null;
+    }
+
+    function parseEpisodes(scriptContent) {
+      const regex = /var\s+(eps\d+)\s*=\s*(\[[\s\S]*?\]);/g;
+      const episodeMap = new Map();
+      let match;
+      while ((match = regex.exec(scriptContent)) !== null) {
+        const key = match[1];
+        let rawArray = match[2]
+          .replace(/[\r\n\t]/g, '')
+          .replace(/'/g, '"')
+          .replace(/,\s*]/g, ']');
+
+        try {
+          const episodes = JSON.parse(rawArray);
+          episodes.forEach((url, index) => {
+            const epNum = index + 1;
+            if (!episodeMap.has(epNum)) episodeMap.set(epNum, []);
+            episodeMap.get(epNum).push({ source: key, url });
+          });
+        } catch (e) {}
+      }
+      return episodeMap;
+    }
+
+    async function loadEpisodes(title, langs, langIndex = 0, forcedSeason = null, forcedEp = null) {
+      episodeList.innerHTML = "";
+      player.src = "";
+
+      if (langIndex >= langs.length) return;
+
+      const currentLang = langs[langIndex];
+      createLangSelector(langs, currentLang, (newLang) => {
+        const index = langs.indexOf(newLang);
+        if (index !== -1) {
+          loadEpisodes(title, langs, index, forcedSeason, forcedEp);
+        }
+      });
+
+      const result = await findAvailableSeason(title, currentLang, forcedSeason);
+      if (!result) {
+        return loadEpisodes(title, langs, langIndex + 1, forcedSeason, forcedEp);
+      }
+
+      const { content: scriptContent } = result;
+      const episodeMap = parseEpisodes(scriptContent);
+
+      if (episodeMap.size === 0) return;
+
+      [...episodeMap.entries()].sort((a, b) => a[0] - b[0]).forEach(([epNum, sources]) => {
+        const wrapper = document.createElement("div");
+        wrapper.className = "episode-group";
+
+        const btn = document.createElement("button");
+        btn.className = "episode-btn";
+        btn.textContent = `Épisode ${epNum}`;
+        btn.onclick = () => {
+          player.src = sources[0].url;
+        };
+        wrapper.appendChild(btn);
+
+        if (sources.length > 1) {
+          const selector = document.createElement("select");
+          sources.forEach((src, i) => {
+            const opt = document.createElement("option");
+            opt.value = src.url;
+            opt.textContent = `Lecteur ${i + 1}`;
+            selector.appendChild(opt);
+          });
+          selector.onchange = () => {
+            player.src = selector.value;
+          };
+          wrapper.appendChild(selector);
+        }
+
+        const note = getPlayerNote(sources[0].url);
+        if (note) {
+          const span = document.createElement("div");
+          span.className = "note";
+          span.textContent = note;
+          wrapper.appendChild(span);
+        }
+
+        episodeList.appendChild(wrapper);
+      });
+
+      const firstEpUrl = forcedEp && episodeMap.get(forcedEp)?.[0]?.url
+        ? episodeMap.get(forcedEp)[0].url
+        : [...episodeMap.entries()][0]?.[1]?.[0]?.url;
+
+      if (firstEpUrl) player.src = firstEpUrl;
+    }
+
+    const { title, langs, saison, episode } = getQueryParams();
+
+    loadPlayerInfo().then(() => {
+      loadEpisodes(title, langs, 0, saison, episode);
+    });
+  </script>
+</body>
+</html>
