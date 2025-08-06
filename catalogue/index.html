@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Catalogue VoidAnime</title>
+  <style>
+    body {
+      background-color: #1a1a1a;
+      color: white;
+      font-family: sans-serif;
+      margin: 0;
+      padding: 0;
+    }
+
+    nav {
+      background-color: #2c2c2c;
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      padding: 1rem;
+      border-bottom: 2px solid #444;
+    }
+
+    nav a {
+      color: white;
+      text-decoration: none;
+      font-weight: bold;
+      transition: color 0.2s;
+    }
+
+    nav a:hover {
+      color: #ff4757;
+    }
+
+    h1 {
+      text-align: center;
+      margin: 1.5rem 0 0.5rem;
+      font-size: 1.8rem;
+    }
+
+    #search-bar {
+      display: flex;
+      justify-content: center;
+      margin: 1rem 0;
+    }
+
+    #search-bar input {
+      width: 60%;
+      padding: 0.6rem;
+      border: none;
+      border-radius: 5px 0 0 5px;
+      font-size: 1rem;
+      outline: none;
+    }
+
+    #search-bar button {
+      padding: 0.6rem 1rem;
+      background-color: #ff4757;
+      color: white;
+      border: none;
+      border-radius: 0 5px 5px 0;
+      cursor: pointer;
+    }
+
+    #catalogue {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      justify-content: center;
+      padding: 1rem;
+    }
+
+    .anime-item {
+      background-color: #2c2c2c;
+      border-radius: 8px;
+      overflow: hidden;
+      width: 160px;
+      text-align: center;
+      padding: 0.5rem;
+      text-decoration: none;
+      color: white;
+      transition: background-color 0.2s ease;
+    }
+
+    .anime-item:hover {
+      background-color: #3a3a3a;
+    }
+
+    .anime-item img {
+      width: 100%;
+      height: auto;
+      border-radius: 4px;
+    }
+
+    .anime-item-title {
+      font-size: 0.9rem;
+      margin-top: 0.5rem;
+    }
+
+    .lang-badge {
+      display: inline-block;
+      font-size: 0.7rem;
+      margin-top: 0.25rem;
+      padding: 0.2rem 0.4rem;
+      background-color: #ff4757;
+      border-radius: 4px;
+      color: white;
+    }
+
+    .pagination {
+      text-align: center;
+      margin: 2rem 0;
+    }
+
+    .pagination button {
+      background-color: #2c2c2c;
+      color: white;
+      border: none;
+      margin: 0.2rem;
+      padding: 0.4rem 0.7rem;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+
+    .pagination button:hover {
+      background-color: #444;
+    }
+
+    .pagination button.active {
+      background-color: #ff4757;
+    }
+
+    footer {
+      text-align: center;
+      padding: 1.5rem;
+      font-size: 0.9rem;
+      color: #aaa;
+      background-color: #1a1a1a;
+      border-top: 1px solid #333;
+    }
+  </style>
+</head>
+<body>
+
+  <nav>
+    <a href="/VoidAnime/">Accueil</a>
+    <a href="/VoidAnime/catalogue">Catalogue</a>
+    <a href="/VoidAnime/planning">Planning</a>
+    <a href="/VoidAnime/compte">Compte</a>
+  </nav>
+
+  <h1>Catalogue VoidAnime</h1>
+
+  <div id="search-bar">
+    <input type="text" id="search-input" placeholder="Rechercher un anime...">
+    <button onclick="searchAnime()">🔍</button>
+  </div>
+
+  <div class="pagination" id="pagination"></div>
+  <div id="catalogue">Chargement…</div>
+  <div class="pagination" id="pagination-bottom"></div>
+
+  <footer>
+    VoidAnime © 2025 | utilisant les données de Anime Sama<br>
+    VoidAnime et Anime-Sama n'hébergent aucune vidéo sur leurs serveurs.<br>
+    Pour toute réclamation relative aux droits, contactez directement la plateforme d’hébergement vidéo.
+  </footer>
+
+  <script>
+    function formatAnimeName(name) {
+      return name
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-zA-Z0-9 ]/g, "")
+        .replace(/\s+/g, "-")
+        .toLowerCase();
+    }
+
+    function getPageFromURL() {
+      const url = new URL(window.location.href);
+      const page = parseInt(url.searchParams.get("page"));
+      return isNaN(page) || page < 1 || page > 38 ? 1 : page;
+    }
+
+    function updateURLPage(page) {
+      const url = new URL(window.location.href);
+      url.searchParams.set("page", page);
+      window.history.replaceState(null, "", url.toString());
+    }
+
+    function clearPagination() {
+      document.getElementById("pagination").innerHTML = "";
+      document.getElementById("pagination-bottom").innerHTML = "";
+    }
+
+    function createPagination(currentPage) {
+      const containers = [document.getElementById("pagination"), document.getElementById("pagination-bottom")];
+      containers.forEach(container => {
+        container.innerHTML = "";
+        for (let i = 1; i <= 38; i++) {
+          const btn = document.createElement("button");
+          btn.textContent = i;
+          if (i === currentPage) btn.classList.add("active");
+          btn.onclick = () => {
+            updateURLPage(i);
+            loadCatalogue(i);
+          };
+          container.appendChild(btn);
+        }
+      });
+    }
+
+    async function loadCatalogue(page = 1) {
+      document.getElementById("catalogue").innerHTML = "Chargement…";
+      createPagination(page);
+
+      const url = `https://corsproxy.io/?https://anime-sama.fr/catalogue/?type[]=Anime&search=&page=${page}`;
+
+      try {
+        const res = await fetch(url);
+        const html = await res.text();
+        parseAndDisplay(html);
+      } catch (e) {
+        document.getElementById("catalogue").innerHTML = "Erreur réseau ou proxy.";
+        clearPagination();
+      }
+    }
+
+    async function searchAnime() {
+      const query = document.getElementById("search-input").value.trim();
+      if (!query) {
+        const currentPage = getPageFromURL();
+        loadCatalogue(currentPage);
+        return;
+      }
+
+      document.getElementById("catalogue").innerHTML = "Recherche…";
+      clearPagination();
+
+      const url = `https://corsproxy.io/?https://anime-sama.fr/catalogue/?type[]=Anime&search=${encodeURIComponent(query)}`;
+
+      try {
+        const res = await fetch(url);
+        const html = await res.text();
+        parseAndDisplay(html);
+      } catch (e) {
+        document.getElementById("catalogue").innerHTML = "Erreur réseau ou proxy.";
+      }
+    }
+
+    function parseAndDisplay(html) {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, "text/html");
+      const catalogDiv = doc.querySelector("#list_catalog");
+
+      const target = document.getElementById("catalogue");
+      target.innerHTML = "";
+
+      if (!catalogDiv) {
+        target.innerHTML = "Aucun résultat.";
+        return;
+      }
+
+      catalogDiv.querySelectorAll("a").forEach(a => {
+        const title = a.querySelector("h1")?.innerText || "Inconnu";
+        const img = a.querySelector("img")?.src || "";
+        const lang = a.querySelector("p:last-of-type")?.innerText.trim() || "VF";
+        const safeName = formatAnimeName(title);
+
+        const item = document.createElement("a");
+        item.className = "anime-item";
+        item.href = `watch?V=${safeName}&lang=${lang.toLowerCase()}`;
+
+        item.innerHTML = `
+          <img src="${img}" alt="${title}">
+          <div class="anime-item-title">${title}</div>
+          <div class="lang-badge">${lang}</div>
+        `;
+
+        target.appendChild(item);
+      });
+    }
+
+    // Initialisation
+    const currentPage = getPageFromURL();
+    loadCatalogue(currentPage);
+  </script>
+</body>
+</html>
