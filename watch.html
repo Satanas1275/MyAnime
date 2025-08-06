@@ -2,112 +2,189 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <title>Lecteur Anime</title>
+  <title>Lecture d'anime</title>
   <style>
-    body { background: #111; color: #eee; font-family: sans-serif; padding: 10px; }
-    iframe { width: 100%; height: 400px; border: none; background: #000; }
-    #logbox { white-space: pre-wrap; font-family: monospace; background: #222; padding: 10px; margin-top: 10px; max-height: 300px; overflow-y: auto; border: 1px solid #444; }
+    /* [Même CSS que le tien] */
   </style>
 </head>
 <body>
+  <h1>Lecture d'anime</h1>
 
-<h2>Lecteur Anime</h2>
-<iframe id="player" src=""></iframe>
+  <div id="controls">
+    <label for="lang-select">Langue :</label>
+    <select id="lang-select"></select>
+  </div>
 
-<div id="logbox">[ Logs chargement... ]</div>
+  <iframe id="video-player" allowfullscreen></iframe>
+  <div id="episode-list"></div>
+  <div id="logs">[ Logs chargement... ]</div>
 
-<script>
-const LOG_BOX = document.getElementById("logbox");
-const PLAYER = document.getElementById("player");
+  <script>
+    const logs = document.getElementById("logs");
+    const player = document.getElementById("video-player");
+    const episodeList = document.getElementById("episode-list");
+    const langSelect = document.getElementById("lang-select");
 
-const getParam = (key) => {
-  const url = new URL(location.href);
-  return url.searchParams.get(key);
-};
+    const titleFixes = {
+      "5cm-per-second": "5-cm-per-second",
+      "one-piece": "one-piece-tv",
+      "bleach": "bleach-tv",
+      // Ajoute ici d'autres corrections si nécessaire
+    };
 
-const log = (msg) => {
-  if (LOG_BOX) LOG_BOX.textContent += "\n→ " + msg;
-  else console.log(msg);
-};
+    function log(msg) {
+      logs.innerHTML += "\n→ " + msg;
+      logs.scrollTop = logs.scrollHeight;
+    }
 
-const normalizeSlug = async (animeSlug) => {
-  try {
-    const res = await fetch("https://satanas1275.github.io/MyAnime/assets/slugs.json");
-    const map = await res.json();
-    return map[animeSlug] || animeSlug;
-  } catch (e) {
-    log("⚠️ Erreur chargement du JSON de correction de slug");
-    return animeSlug;
-  }
-};
+    function getQueryParams() {
+      const url = new URL(window.location.href);
+      let rawTitle = url.searchParams.get("V") || "inconnu";
+      let langs = (url.searchParams.get("lang") || "vf").split(",").map(l => l.trim().toLowerCase());
 
-const tryLoadEpisodes = async (slug, langList) => {
-  for (const lang of langList) {
-    const url = `https://corsproxy.io/?https://anime-sama.fr/catalogue/${slug}/saison1/${lang}/episodes.js`;
-    log("🔄 Chargement de: " + url);
+      // Correction du nom de l'anime si connu
+      const correctedTitle = titleFixes[rawTitle] || rawTitle;
 
-    try {
-      const res = await fetch(url);
-      const text = await res.text();
+      // Tri des langues (VF en priorité)
+      langs = langs.sort((a, b) => (a === "vf" ? -1 : 1));
 
-      if (!text.includes("var eps")) continue;
+      return { title: correctedTitle, langs };
+    }
 
-      log("📦 Script récupéré, parsing à la main...");
-      const found = {};
+    function createLangSelector(langs, currentLang, onChange) {
+      langSelect.innerHTML = "";
+      langs.forEach(lang => {
+        const opt = document.createElement("option");
+        opt.value = lang;
+        opt.textContent = lang.toUpperCase();
+        if (lang === currentLang) opt.selected = true;
+        langSelect.appendChild(opt);
+      });
+      langSelect.onchange = () => {
+        onChange(langSelect.value);
+      };
+    }
 
-      // Extraction brute des tableaux
-      for (let i = 1; i <= 4; i++) {
-        const match = text.match(new RegExp(`var eps${i}\\s*=\\s*\\[(.*?)\\];`, 's'));
-        if (!match) {
-          log(`⚠️ eps${i} introuvable`);
-          continue;
-        }
+    async function loadEpisodesForLang(title, lang) {
+      const baseURL = `https://corsproxy.io/?https://anime-sama.fr/catalogue/${title}`;
+      const urls = [
+        `${baseURL}/saison1/${lang}/episodes.js`,
+        `${baseURL}/film/${lang}/episodes.js`
+      ];
 
+      for (const url of urls) {
+        log(`🔄 Chargement de: ${url}`);
         try {
-          const cleaned = `[${match[1].replace(/[\n\r\s]+/g, "").replace(/,+/g, ",").replace(/,\]/g, "]")}]`;
-          const urls = JSON.parse(cleaned.replace(/'/g, '"'));
-          found[`eps${i}`] = urls;
-          for (let j = 0; j < urls.length; j++) {
-            log(`✅ eps${i} - épisode ${j + 1} trouvé`);
-          }
+          const res = await fetch(url);
+          if (!res.ok) continue;
+          const text = await res.text();
+          log(`📦 Script récupéré, parsing à la main...`);
+          return text;
         } catch (e) {
-          log(`⚠️ JSON parse échoué pour eps${i}: ${e.message}`);
+          log(`❌ Échec de chargement: ${url}`);
         }
       }
 
-      const total = Object.values(found).reduce((acc, list) => acc + list.length, 0);
-      if (total === 0) {
-        log("❌ Erreur: Aucun épisode valide trouvé");
+      return null;
+    }
+
+    async function loadEpisodes(title, langs, activeLangIndex = 0) {
+      episodeList.innerHTML = "";
+      player.src = "";
+
+      const currentLang = langs[activeLangIndex];
+      createLangSelector(langs, currentLang, (newLang) => {
+        const index = langs.indexOf(newLang);
+        if (index !== -1) {
+          logs.innerHTML += `\n\n🌀 Rechargement avec la langue : ${newLang}`;
+          loadEpisodes(title, langs, index);
+        }
+      });
+
+      const scriptContent = await loadEpisodesForLang(title, currentLang);
+      if (!scriptContent) {
+        if (activeLangIndex + 1 < langs.length) {
+          log(`⚠️ Impossible de charger ${currentLang}, on tente ${langs[activeLangIndex + 1]}...`);
+          return loadEpisodes(title, langs, activeLangIndex + 1);
+        } else {
+          log("❌ Aucun fichier episodes.js trouvé pour toutes les langues.");
+          return;
+        }
+      }
+
+      const regex = /var\s+(eps\d+)\s*=\s*(\[[\s\S]*?\]);/g;
+      const episodeMap = new Map();
+      let match;
+
+      while ((match = regex.exec(scriptContent)) !== null) {
+        const key = match[1];
+        let rawArray = match[2]
+          .replace(/[\r\n\t]/g, '')
+          .replace(/'/g, '"')
+          .replace(/,\s*]/g, ']');
+
+        try {
+          const episodes = JSON.parse(rawArray);
+          episodes.forEach((url, index) => {
+            const epNum = index + 1;
+            if (!episodeMap.has(epNum)) episodeMap.set(epNum, []);
+            episodeMap.get(epNum).push({ source: key, url });
+            log(`✅ ${key} - épisode ${epNum} trouvé`);
+          });
+        } catch (e) {
+          log(`⚠️ JSON parse échoué pour ${key}: ${e.message}`);
+        }
+      }
+
+      if (episodeMap.size === 0) {
+        log("❌ Aucun épisode valide trouvé");
         return;
       }
 
-      log(`✅ ${total} épisode(s) chargé(s).`);
-      const first = Object.values(found).flat()[0];
-      if (first) {
+      log(`✅ ${episodeMap.size} épisode(s) uniques chargé(s).`);
+
+      [...episodeMap.entries()].sort((a, b) => a[0] - b[0]).forEach(([epNum, sources]) => {
+        const wrapper = document.createElement("div");
+        wrapper.className = "episode-group";
+
+        const btn = document.createElement("button");
+        btn.className = "episode-btn";
+        btn.textContent = `Épisode ${epNum}`;
+        btn.onclick = () => {
+          player.src = sources[0].url;
+        };
+        wrapper.appendChild(btn);
+
+        if (sources.length > 1) {
+          const selector = document.createElement("select");
+          sources.forEach((src, i) => {
+            const opt = document.createElement("option");
+            opt.value = src.url;
+            opt.textContent = `Lecteur ${i + 1}`;
+            selector.appendChild(opt);
+          });
+
+          selector.onchange = () => {
+            player.src = selector.value;
+          };
+
+          wrapper.appendChild(selector);
+        }
+
+        episodeList.appendChild(wrapper);
+      });
+
+      const firstEp = [...episodeMap.entries()][0]?.[1]?.[0]?.url;
+      if (firstEp) {
+        player.src = firstEp;
         log("▶️ Lecture auto du premier épisode");
-        PLAYER.src = first;
+      } else {
+        log("⚠️ Aucun lecteur dispo pour l'épisode 1");
       }
-
-      return; // STOP si un fichier a été trouvé et lu
-    } catch (e) {
-      log("❌ Erreur chargement: " + e.message);
     }
-  }
 
-  log("❌ Aucun fichier episodes.js trouvé. Pour éviter ce bug, utilise le JSON de correction de slug.");
-};
-
-(async () => {
-  const rawSlug = (getParam("V") || "").trim().toLowerCase();
-  const langList = (getParam("lang") || "vostfr,vf").split(",").map(l => l.trim().toLowerCase()).filter(Boolean);
-
-  const fixedSlug = await normalizeSlug(rawSlug);
-  log("🎯 Anime corrigé : " + fixedSlug);
-  log("🈯️ Langues prioritaires : " + langList.join(", "));
-
-  await tryLoadEpisodes(fixedSlug, langList);
-})();
-</script>
-
+    const { title, langs } = getQueryParams();
+    loadEpisodes(title, langs);
+  </script>
 </body>
 </html>
