@@ -2,109 +2,102 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <title>Catalogue VoidAnime</title>
+  <title>Accueil | VoidAnime</title>
   <style>
     body {
       background-color: #1a1a1a;
       color: white;
       font-family: sans-serif;
       margin: 0;
-      padding: 1rem;
+      padding: 0;
     }
-    h1 {
-      text-align: center;
-      margin-bottom: 2rem;
-    }
-    #catalogue {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 1rem;
-      justify-content: center;
-    }
-    .anime-item {
+
+    nav {
       background-color: #2c2c2c;
-      border-radius: 8px;
-      overflow: hidden;
-      width: 160px;
-      text-align: center;
-      padding: 0.5rem;
-      position: relative;
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      padding: 1rem;
+      border-bottom: 2px solid #444;
+    }
+
+    nav a {
+      color: white;
       text-decoration: none;
-      color: white;
-      transition: background-color 0.2s ease;
+      font-weight: bold;
+      transition: color 0.2s;
     }
-    .anime-item:hover {
-      background-color: #3a3a3a;
+
+    nav a:hover {
+      color: #ff4757;
     }
-    .anime-item img {
-      width: 100%;
-      height: auto;
-      border-radius: 4px;
+
+    main {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 4rem 1rem;
     }
-    .anime-item-title {
-      font-size: 0.9rem;
-      margin-top: 0.5rem;
+
+    h1 {
+      font-size: 2.5rem;
+      margin-bottom: 1rem;
     }
-    .lang-badge {
-      display: inline-block;
-      font-size: 0.7rem;
-      margin-top: 0.25rem;
-      padding: 0.2rem 0.4rem;
+
+    p {
+      font-size: 1.2rem;
+      max-width: 600px;
+    }
+
+    a.catalogue-btn {
+      margin-top: 2rem;
+      padding: 0.8rem 1.5rem;
       background-color: #ff4757;
-      border-radius: 4px;
       color: white;
+      text-decoration: none;
+      border-radius: 5px;
+      font-weight: bold;
+      transition: background-color 0.3s;
+    }
+
+    a.catalogue-btn:hover {
+      background-color: #e84118;
+    }
+
+    footer {
+      text-align: center;
+      padding: 2rem;
+      color: #aaa;
+      font-size: 0.9rem;
+      background-color: #1a1a1a;
+      border-top: 1px solid #333;
+      margin-top: 3rem;
     }
   </style>
 </head>
 <body>
-  <h1>Catalogue VoidAnime</h1>
-  <div id="catalogue">Chargement…</div>
-  <a href="/VoidAnime/catalogue">Catalogue v2</a>
 
-  <script>
-    function formatAnimeName(name) {
-      return name
-        .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Enlève accents
-        .replace(/[^a-zA-Z0-9 ]/g, "") // Supprime caractères spéciaux
-        .replace(/\s+/g, "-") // Espaces → tirets
-        .toLowerCase();
-    }
+  <nav>
+    <a href="/VoidAnime/">Accueil</a>
+    <a href="/VoidAnime/catalogue">Catalogue</a>
+    <a href="/VoidAnime/planning">Planning</a>
+    <a href="/VoidAnime/compte">Compte</a>
+  </nav>
 
-    async function loadCatalogue() {
-      const res = await fetch("https://corsproxy.io/?https://anime-sama.fr/catalogue/?type%5B0%5D=Anime&search=&page=1");
-      const html = await res.text();
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(html, "text/html");
-      const catalogDiv = doc.querySelector("#list_catalog");
-      if (!catalogDiv) return;
+  <main>
+    <h1>Bienvenue sur VoidAnime</h1>
+    <p>
+      Cette page est encore en développement, mais tu peux déjà profiter du catalogue complet des animés disponibles !
+    </p>
+    <a class="catalogue-btn" href="/VoidAnime/catalogue">🎬 Accéder au catalogue</a>
+  </main>
 
-      document.getElementById("catalogue").innerHTML = "";
+  <footer>
+    VoidAnime © 2025 | Site en développement<br>
+    Inspiré de l'univers Anime-Sama – aucun contenu n'est hébergé par VoidAnime.
+  </footer>
 
-      catalogDiv.querySelectorAll("a").forEach(a => {
-        const title = a.querySelector("h1")?.innerText || "Inconnu";
-        const img = a.querySelector("img")?.src || "";
-        const lang = a.querySelector("p:last-of-type")?.innerText.trim() || "VF";
-
-        const safeName = formatAnimeName(title);
-
-        const item = document.createElement("a");
-        item.className = "anime-item";
-        item.href = `watch?V=${safeName}&lang=${lang.toLowerCase()}`;
-
-        item.innerHTML = `
-          <img src="${img}" alt="${title}">
-          <div class="anime-item-title">${title}</div>
-          <div class="lang-badge">${lang}</div>
-        `;
-
-        document.getElementById("catalogue").appendChild(item);
-      });
-    }
-
-    loadCatalogue();
-  </script>
 </body>
-
 </html>
-
-
