@@ -94,7 +94,7 @@
       "5cm-per-second": "5-cm-per-second",
       "one-piece": "one-piece-tv",
       "bleach": "bleach-tv",
-      // Ajoute ici d'autres corrections si nécessaire
+      // Ajoute ici d'autres corrections si besoin
     };
 
     function log(msg) {
@@ -107,11 +107,11 @@
       let rawTitle = url.searchParams.get("V") || "inconnu";
       let langs = (url.searchParams.get("lang") || "vf").split(",").map(l => l.trim().toLowerCase());
 
-      // Correction du nom de l'anime si connu
+      // Correction du nom de l'anime si nécessaire
       const correctedTitle = titleFixes[rawTitle] || rawTitle;
 
-      // Trier langues avec VF en priorité
-      langs = langs.sort((a, b) => (a === "vf" ? -1 : 1));
+      // Prioriser VF en tête
+      langs = langs.sort((a, b) => (a === "vf" ? -1 : (b === "vf" ? 1 : 0)));
 
       return { title: correctedTitle, langs };
     }
@@ -130,30 +130,34 @@
       };
     }
 
-    // Fonction qui tente de charger le episodes.js sur plusieurs chemins (saison1 puis film)
-    async function tryLoadEpisodes(title, lang) {
-      const baseURL = `https://corsproxy.io/?https://anime-sama.fr/catalogue/${title}`;
-      const paths = [
-        `saison1/${lang}/episodes.js`,
-        `film/${lang}/episodes.js`
-      ];
-
-      for (const path of paths) {
-        const url = `${baseURL}/${path}`;
-        log(`🔄 Chargement de: ${url}`);
-        try {
-          const res = await fetch(url);
-          if (!res.ok) {
-            log(`⚠️ Fichier non trouvé: ${url} (status ${res.status})`);
-            continue;
-          }
-          const text = await res.text();
-          log(`📦 Script récupéré, parsing à la main...`);
-          return text;
-        } catch (e) {
-          log(`❌ Échec de chargement: ${url}`);
+    // Tente de charger le episodes.js pour un titre + langue + chemin (saison1 ou film)
+    async function fetchEpisodesScript(title, lang, type) {
+      const url = `https://corsproxy.io/?https://anime-sama.fr/catalogue/${title}/${type}/${lang}/episodes.js`;
+      log(`🔄 Chargement de: ${url}`);
+      try {
+        const res = await fetch(url);
+        if (!res.ok) {
+          log(`⚠️ Fichier non trouvé: ${url} (status ${res.status})`);
+          return null;
         }
+        const text = await res.text();
+        log(`📦 Script récupéré, parsing à la main...`);
+        return text;
+      } catch (e) {
+        log(`❌ Échec de chargement: ${url}`);
+        return null;
       }
+    }
+
+    // Essaye saison1 puis film pour la même langue
+    async function tryLoadEpisodesForLang(title, lang) {
+      let scriptContent = await fetchEpisodesScript(title, lang, "saison1");
+      if (scriptContent) return { scriptContent, type: "saison1" };
+
+      log(`⚠️ Impossible de charger 'saison1' pour ${lang}, on tente 'film'...`);
+      scriptContent = await fetchEpisodesScript(title, lang, "film");
+      if (scriptContent) return { scriptContent, type: "film" };
+
       return null;
     }
 
@@ -175,12 +179,15 @@
         }
       });
 
-      const scriptContent = await tryLoadEpisodes(title, currentLang);
-
-      if (!scriptContent) {
-        log(`⚠️ Impossible de charger ${currentLang}, on tente la langue suivante...`);
+      const result = await tryLoadEpisodesForLang(title, currentLang);
+      if (!result) {
+        log(`⚠️ Impossible de charger la langue ${currentLang}, on passe à la suivante...`);
         return loadEpisodes(title, langs, langIndex + 1);
       }
+
+      const scriptContent = result.scriptContent;
+      const type = result.type; // 'saison1' ou 'film'
+      log(`ℹ️ Chargé depuis: ${type}`);
 
       const regex = /var\s+(eps\d+)\s*=\s*(\[[\s\S]*?\]);/g;
       const episodeMap = new Map();
