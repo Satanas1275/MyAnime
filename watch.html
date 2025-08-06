@@ -110,7 +110,7 @@
       // Correction du nom de l'anime si connu
       const correctedTitle = titleFixes[rawTitle] || rawTitle;
 
-      // Tri des langues (VF en priorité)
+      // Trier langues avec VF en priorité
       langs = langs.sort((a, b) => (a === "vf" ? -1 : 1));
 
       return { title: correctedTitle, langs };
@@ -130,15 +130,16 @@
       };
     }
 
-    // Charge le script episodes.js en testant d'abord saison1 puis film (fallback)
-    async function loadEpisodesForLang(title, lang) {
+    // Fonction qui tente de charger le episodes.js sur plusieurs chemins (saison1 puis film)
+    async function tryLoadEpisodes(title, lang) {
       const baseURL = `https://corsproxy.io/?https://anime-sama.fr/catalogue/${title}`;
-      const urls = [
-        `${baseURL}/saison1/${lang}/episodes.js`,
-        `${baseURL}/film/${lang}/episodes.js`
+      const paths = [
+        `saison1/${lang}/episodes.js`,
+        `film/${lang}/episodes.js`
       ];
 
-      for (const url of urls) {
+      for (const path of paths) {
+        const url = `${baseURL}/${path}`;
         log(`🔄 Chargement de: ${url}`);
         try {
           const res = await fetch(url);
@@ -156,11 +157,16 @@
       return null;
     }
 
-    async function loadEpisodes(title, langs, activeLangIndex = 0) {
+    async function loadEpisodes(title, langs, langIndex = 0) {
       episodeList.innerHTML = "";
       player.src = "";
 
-      const currentLang = langs[activeLangIndex];
+      if (langIndex >= langs.length) {
+        log("❌ Aucun fichier episodes.js trouvé pour toutes les langues.");
+        return;
+      }
+
+      const currentLang = langs[langIndex];
       createLangSelector(langs, currentLang, (newLang) => {
         const index = langs.indexOf(newLang);
         if (index !== -1) {
@@ -169,15 +175,11 @@
         }
       });
 
-      const scriptContent = await loadEpisodesForLang(title, currentLang);
+      const scriptContent = await tryLoadEpisodes(title, currentLang);
+
       if (!scriptContent) {
-        if (activeLangIndex + 1 < langs.length) {
-          log(`⚠️ Impossible de charger ${currentLang}, on tente ${langs[activeLangIndex + 1]}...`);
-          return loadEpisodes(title, langs, activeLangIndex + 1);
-        } else {
-          log("❌ Aucun fichier episodes.js trouvé pour toutes les langues.");
-          return;
-        }
+        log(`⚠️ Impossible de charger ${currentLang}, on tente la langue suivante...`);
+        return loadEpisodes(title, langs, langIndex + 1);
       }
 
       const regex = /var\s+(eps\d+)\s*=\s*(\[[\s\S]*?\]);/g;
