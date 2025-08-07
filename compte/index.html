@@ -1,9 +1,14 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8">
-  <title>Accueil | VoidAnime</title>
+  <meta charset="UTF-8" />
+  <title>Mon Compte | VoidAnime</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script src="https://unpkg.com/pocketbase/dist/pocketbase.umd.js"></script>
   <style>
+    * {
+      box-sizing: border-box;
+    }
     body {
       background-color: #1a1a1a;
       color: white;
@@ -33,72 +38,218 @@
     }
 
     main {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      text-align: center;
-      padding: 4rem 1rem;
+      max-width: 500px;
+      margin: 4rem auto;
+      background-color: #2c2c2c;
+      padding: 2rem;
+      border-radius: 8px;
+      box-shadow: 0 0 10px #000;
     }
 
     h1 {
-      font-size: 2.5rem;
+      text-align: center;
+      font-size: 2rem;
       margin-bottom: 1rem;
     }
 
-    p {
-      font-size: 1.2rem;
-      max-width: 600px;
+    label {
+      display: block;
+      margin-top: 15px;
+      font-weight: bold;
     }
 
-    a.catalogue-btn {
-      margin-top: 2rem;
-      padding: 0.8rem 1.5rem;
+    input {
+      width: 100%;
+      padding: 10px;
+      margin-top: 5px;
+      background-color: #444;
+      color: white;
+      border: none;
+      border-radius: 5px;
+    }
+
+    button {
+      width: 100%;
+      padding: 10px;
+      margin-top: 20px;
       background-color: #ff4757;
       color: white;
-      text-decoration: none;
+      border: none;
       border-radius: 5px;
       font-weight: bold;
+      cursor: pointer;
       transition: background-color 0.3s;
     }
 
-    a.catalogue-btn:hover {
+    button:hover {
       background-color: #e84118;
+    }
+
+    .toggle-auth {
+      text-align: center;
+      margin-top: 15px;
+    }
+
+    .toggle-auth a {
+      color: #ff4757;
+      cursor: pointer;
+      text-decoration: underline;
+    }
+
+    .info {
+      text-align: center;
+      margin: 10px 0;
+    }
+
+    .info img {
+      width: 100px;
+      height: 100px;
+      border-radius: 50%;
+      aspect-ratio: 1;
+      object-fit: cover;
+      margin-bottom: 10px;
     }
 
     footer {
       text-align: center;
-      padding: 2rem;
+      padding: 1.5rem;
       color: #aaa;
       font-size: 0.9rem;
       background-color: #1a1a1a;
       border-top: 1px solid #333;
-      margin-top: 3rem;
     }
   </style>
 </head>
 <body>
 
   <nav>
-    <a href="/VoidAnimeApp/">Accueil</a>
-    <a href="/VoidAnimeApp/catalogue">Catalogue</a>
-    <a href="/VoidAnimeApp/planning">Planning</a>
-    <a href="/VoidAnimeApp/compte">Compte</a>
+    <a href="/VoidAnime/">Accueil</a>
+    <a href="/VoidAnime/catalogue">Catalogue</a>
+    <a href="/VoidAnime/planning">Planning</a>
+    <a href="/VoidAnime/compte">Compte</a>
   </nav>
 
   <main>
-    <h1>Bienvenue sur VoidAnime</h1>
-    <p>
-      Cette page est encore en développement, mais tu peux déjà profiter du catalogue complet des animés disponibles !
+    <h1>Mon Compte</h1>
+
+    <!-- Connexion -->
+    <div id="login-section">
+      <form onsubmit="login(event)">
+        <label for="login-email">Email</label>
+        <input id="login-email" type="email" required />
+        <label for="login-password">Mot de passe</label>
+        <input id="login-password" type="password" required />
+        <button type="submit">Se connecter</button>
+      </form>
+      <div class="toggle-auth">
+        Pas encore de compte ? <a onclick="showSection('register')">Créer un compte</a>
+      </div>
+    </div>
+
+    <!-- Inscription -->
+    <div id="register-section" style="display:none;">
+      <form onsubmit="register(event)">
+        <label for="register-email">Email</label>
+        <input id="register-email" type="email" required />
+        <label for="register-name">Nom</label>
+        <input id="register-name" type="text" required />
+        <label for="register-password">Mot de passe</label>
+        <input id="register-password" type="password" required />
+        <label for="register-password2">Confirmer</label>
+        <input id="register-password2" type="password" required />
+        <button type="submit">Créer un compte</button>
+      </form>
+      <div class="toggle-auth">
+        Déjà inscrit ? <a onclick="showSection('login')">Se connecter</a>
+      </div>
+    </div>
+
+    <!-- Mon profil -->
+    <div id="account-section" style="display:none;" class="info">
+      <img id="account-avatar" src="" alt="Avatar" />
+      <p><strong>Email :</strong> <span id="account-email"></span></p>
+      <p><strong>Nom :</strong> <span id="account-name"></span></p>
+      <p><strong>ID :</strong> <span id="account-id"></span></p>
+      <button onclick="logout()">Se déconnecter</button>
+    </div>
+
+    <p style="text-align:center; margin-top:2rem; color: #ccc;">
+      🔐 Connexion avec votre compte <strong>Rocknite Studio</strong>.
     </p>
-    <a class="catalogue-btn" href="/VoidAnime/catalogue">🎬 Accéder au catalogue</a>
   </main>
 
   <footer>
-    VoidAnime © 2025 | Site en développement<br>
-    Inspiré de l'univers Anime-Sama – aucun contenu n'est hébergé par VoidAnime.
+    VoidAnime © 2025 | utilisant les données de Anime Sama<br>
+    VoidAnime et Anime-Sama n'hébergent aucune vidéo sur leurs serveurs.<br>
+    Pour toute réclamation relative aux droits, contactez directement la plateforme d’hébergement vidéo.
   </footer>
 
+  <script>
+    const pb = new PocketBase("https://rocknite-studio.alwaysdata.net");
+
+    function showSection(section) {
+      document.getElementById("login-section").style.display = "none";
+      document.getElementById("register-section").style.display = "none";
+      document.getElementById("account-section").style.display = "none";
+      document.getElementById(section + "-section").style.display = "block";
+      if (section === "account") updateAccountInfo();
+    }
+
+    async function login(event) {
+      event.preventDefault();
+      const email = document.getElementById("login-email").value;
+      const password = document.getElementById("login-password").value;
+      try {
+        await pb.collection("users").authWithPassword(email, password);
+        showSection("account");
+      } catch (err) {
+        alert("Erreur de connexion : " + err.message);
+      }
+    }
+
+    async function register(event) {
+      event.preventDefault();
+      const email = document.getElementById("register-email").value;
+      const name = document.getElementById("register-name").value;
+      const password = document.getElementById("register-password").value;
+      const password2 = document.getElementById("register-password2").value;
+      if (password !== password2) return alert("Les mots de passe ne correspondent pas !");
+      try {
+        await pb.collection("users").create({
+          email,
+          name,
+          password,
+          passwordConfirm: password2,
+        });
+        alert("Compte créé avec succès !");
+        showSection("login");
+      } catch (err) {
+        alert("Erreur : " + err.message);
+      }
+    }
+
+    function logout() {
+      pb.authStore.clear();
+      showSection("login");
+    }
+
+    function updateAccountInfo() {
+      const user = pb.authStore.model;
+      if (!user) return;
+      document.getElementById("account-email").textContent = user.email;
+      document.getElementById("account-name").textContent = user.name;
+      document.getElementById("account-id").textContent = user.id;
+
+      const avatar = user.avatar
+        ? `https://rocknite-studio.alwaysdata.net/api/files/users/${user.id}/${user.avatar}`
+        : "https://via.placeholder.com/100?text=Avatar";
+      document.getElementById("account-avatar").src = avatar;
+    }
+
+    // Affichage automatique si déjà connecté
+    if (pb.authStore.isValid) {
+      showSection("account");
+    }
+  </script>
 </body>
 </html>
-
