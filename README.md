@@ -1,3 +1,3 @@
-# MyAnime
+# VoidAnimeApp
 Just an app for watch your anime for free ! But i'm developping it... 
 Comme back later !
